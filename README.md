@@ -1,5 +1,5 @@
 # MPV Config for Windows Build.
-<p align="center"><img src="https://raw.githubusercontent.com/he2a/mpv-config/master/doc/screen.jpg"></p>
+<p align="center"><img src="https://raw.githubusercontent.com/he2a/mpv-config/master/images/screen.jpg"></p>
 
 ## Overview
 Just my config for use in mpv. Contains custom forced keybindings and optimized for anime media. Currently there is a problem with display-resample and interpolation when used with vulkan in AMD and so vulkan is not used. The source of various lua scripts are mentioned in the file source and are in some cases modified a little from original code.
