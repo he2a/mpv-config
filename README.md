@@ -19,11 +19,14 @@ The custom key bindings can be modified from `input.conf` file. Refer to the man
 * `Page Up / Page Down` - Frame step up / down.
 * `HOME / END` - Increase / Decrease speed by 5%.
 * `Delete` - Cycle subtitle.
-* `Insert` - Cycle audio.
-* `N` - Cycle interpolation.
+* `Key Pad 7 / Key Pad 1` - Increase / Decrease speed by 1%.
+* `Key Pad 9 / Key Pad 3` - Frame step up / down.
+* `Key Pad 8` - Cycle audio.
+* `Key Pad 2` - Toggle interpolation.
 * `l` - Loop file.
 * `q` - Quit.
 * `Q` - Save position and quit.
+* `A` - Toggle audio pitch correction.
 * `s` - Screenshot.
 * `S` - Keep aspect ratio of video on resize.
 * `m` - Mute.
@@ -44,10 +47,11 @@ The custom key bindings can be modified from `input.conf` file. Refer to the man
 
 ### Script / Shader specific key bindings:
 * `\` - Toggle Dynamic Range Compression filter for audio.
-* `a` - Cycles audio devices.
+* `a` - Cycle audio devices.
 * `c` - Auto crops black bars.
 * `d` - Auto deinterlaces video.
-* `n` - Enable adaptive sharpen.
+* `n` - Toggle Adaptive Sharpen.
+* `N` - Toggle Raavu prescaler.
 * `I` - Toggles video stats, change page with `1`, `2`, `3`.
 
 ## System Requirement
