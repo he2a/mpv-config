@@ -35,7 +35,7 @@ The custom key bindings can be modified from `input.conf` file. Refer to the man
 * `w` - Resize window.
 * `b` - Keep window on top.
 * `r` - Rotate video.
-* `0 to 9` - Seek video to n% absolute position.
+* `0 - 9` - Seek video to n% absolute position.
 
 ### Mouse Bindings:
 * `Double Click` - Toggle fullscreen.
@@ -51,8 +51,12 @@ The custom key bindings can be modified from `input.conf` file. Refer to the man
 * `c` - Auto crops black bars.
 * `d` - Auto deinterlaces video.
 * `n` - Toggle Adaptive Sharpen.
-* `N` - Toggle Raavu prescaler.
+* `N` - Toggle Raavu pre scaler.
 * `I` - Toggles video stats, change page with `1`, `2`, `3`.
 
 ## System Requirement
-This config was made for Windows 10 with AMD RX580 GPU and AMD Ryzen 7 1700 CPU. Should run at decent speed in lower specification too.
+This config was made for Windows 10 with AMD RX580 GPU and AMD Ryzen 7 1700 CPU. Should run at decent speed in lower specification too. To increase performance you can do the following:
+* Disable Raavu pre scaler.
+* Remove cscale entry.
+* Set interpolation to no.
+* Disable debanding.

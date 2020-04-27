@@ -33,8 +33,8 @@ local o = {
     plot_color = "FFFFFF",
 
     -- Text style
-    font = "Geogrotesque-SemiBold",
-    font_mono = "Geogrotesque-SemiBold",   -- monospaced digits are sufficient
+    font = "Alte Haas Grotesk Bold",
+    font_mono = "Alte Haas Grotesk Bold",   -- monospaced digits are sufficient
     font_size = 8,
     font_color = "FFFFFF",
     border_size = 0.6,
