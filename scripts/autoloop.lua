@@ -1,6 +1,6 @@
 -- https://github.com/zc62/mpv-scripts/blob/master/autoloop.lua
 
-local autoloop_duration = 30
+local autoloop_duration = 60
 
 function getOption()
     local opt = mp.get_opt("autoloop-duration")
