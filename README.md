@@ -1,7 +1,5 @@
 # MPV Configuration for Windows Build
 
-- - -
-
 <p align="center"><img width=100% src="https://raw.githubusercontent.com/he2a/mpv-config/master/images/preview.jpg" alt="MPV Screenshot"></p>
 
 ## Overview
