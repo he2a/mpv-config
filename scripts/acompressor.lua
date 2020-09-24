@@ -1,4 +1,10 @@
 -- https://github.com/mpv-player/mpv/blob/master/TOOLS/lua/acompressor.lua
+  
+-- This script adds control to the dynamic range compression ffmpeg
+-- filter including key bindings for adjusting parameters.
+--
+-- See https://ffmpeg.org/ffmpeg-filters.html#acompressor for explanation
+-- of the parameteres.
 
 local mp = require 'mp'
 local options = require 'mp.options'

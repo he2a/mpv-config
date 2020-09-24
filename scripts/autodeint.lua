@@ -1,4 +1,29 @@
 -- https://github.com/mpv-player/mpv/blob/master/TOOLS/lua/autodeint.lua
+-- This script uses the lavfi idet filter to automatically insert the
+-- appropriate deinterlacing filter based on a short section of the
+-- currently playing video.
+--
+-- It registers the key-binding ctrl+d, which when pressed, inserts the filters
+-- ``vf=idet,lavfi-pullup,idet``. After 4 seconds, it removes these
+-- filters and decides whether the content is progressive, interlaced, or
+-- telecined and the interlacing field dominance.
+--
+-- Based on this information, it may set mpv's ``deinterlace`` property (which
+-- usually inserts the yadif filter), or insert the ``pullup`` filter if the
+-- content is telecined.  It also sets field dominance with lavfi setfield.
+--
+-- OPTIONS:
+-- The default detection time may be overridden by adding
+--
+-- --script-opts=autodeint.detect_seconds=<number of seconds>
+--
+-- to mpv's arguments. This may be desirable to allow idet more
+-- time to collect data.
+--
+-- To see counts of the various types of frames for each detection phase,
+-- the verbosity can be increased with
+--
+-- --msg-level=autodeint=v
 
 require "mp.msg"
 

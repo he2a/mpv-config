@@ -1,4 +1,7 @@
 -- https://github.com/Argon-/mpv-stats/
+-- Display some stats.
+-- Please consult the readme for information about usage and configuration.
+-- Please note: not every property is always available and therefore not always visible.
 
 local mp = require 'mp'
 local options = require 'mp.options'
@@ -7,11 +10,16 @@ local utils = require 'mp.utils'
 -- Options
 local o = {
     -- Default key bindings
-    key_oneshot = "I",
-    key_toggle = "i",
+    key_oneshot = "i",
+    key_toggle = "I",
     key_page_1 = "1",
     key_page_2 = "2",
     key_page_3 = "3",
+    key_page_4 = "4",
+    -- For pages which support scrolling
+    key_scroll_up = "UP",
+    key_scroll_down = "DOWN",
+    scroll_lines = 1,
 
     duration = 4,
     redraw_delay = 1,                -- acts as duration in the toggling case
@@ -20,6 +28,7 @@ local o = {
     print_perfdata_passes = false,   -- when true, print the full information about all passes
     filter_params_max_length = 100,  -- a filter list longer than this many characters will be shown one filter per line instead
     debug = false,
+
 
     -- Graph options and style
     plot_perfdata = true,
@@ -82,19 +91,20 @@ local cache_recorder_timer = nil
 -- Current page and <page key>:<page function> mappings
 local curr_page = o.key_page_1
 local pages = {}
+local scroll_bound = false
 -- Save these sequences locally as we'll need them a lot
 local ass_start = mp.get_property_osd("osd-ass-cc/0")
 local ass_stop = mp.get_property_osd("osd-ass-cc/1")
 -- Ring buffers for the values used to construct a graph.
 -- .pos denotes the current position, .len the buffer length
 -- .max is the max value in the corresponding buffer
-local vsratio_buf, vsjitter_buf, cache_ahead_buf, cache_total_buf
+local vsratio_buf, vsjitter_buf
 local function init_buffers()
     vsratio_buf = {0, pos = 1, len = 50, max = 0}
     vsjitter_buf = {0, pos = 1, len = 50, max = 0}
-    cache_ahead_buf = {0, pos = 1, len = 50, max = 0}
-    cache_total_buf = {0, pos = 1, len = 50, max = 0}
 end
+local cache_ahead_buf, cache_speed_buf
+local perf_buffers = {}
 -- Save all properties known to this version of mpv
 local property_list = {}
 for p in string.gmatch(mp.get_property("property-list"), "([^,]+)") do property_list[p] = true end
@@ -105,6 +115,11 @@ local property_aliases = {
     ["container-fps"] = "fps",
 }
 
+local function graph_add_value(graph, value)
+    graph.pos = (graph.pos % graph.len) + 1
+    graph[graph.pos] = value
+    graph.max = max(graph.max, value)
+end
 
 -- Return deprecated name for the given property
 local function compat(p)
@@ -156,17 +171,6 @@ end
 
 local function has_vo_window()
     return mp.get_property("vo-configured") == "yes"
-end
-
-
-local function has_ansi()
-    local is_windows = type(package) == 'table'
-        and type(package.config) == 'string'
-        and package.config:sub(1, 1) == '\\'
-    if is_windows then
-        return os.getenv("ANSICON")
-    end
-    return true
 end
 
 
@@ -300,6 +304,8 @@ local function append_perfdata(s, dedicated_page)
         return format("{\\b%d}%02d%%{\\b0}", w, i * 100)
     end
 
+    -- ensure that the fixed title is one element and every scrollable line is
+    -- also one single element.
     s[#s+1] = format("%s%s%s%s{\\fs%s}%s{\\fs%s}",
                      dedicated_page and "" or o.nl, dedicated_page and "" or o.indent,
                      b("Frame Timings:"), o.prefix_sep, o.font_size * 0.66,
@@ -320,7 +326,9 @@ local function append_perfdata(s, dedicated_page)
                                  o.font, o.prefix_sep, o.prefix_sep, pass["desc"])
 
                 if o.plot_perfdata and o.use_ass then
-                    s[#s+1] = generate_graph(pass["samples"], pass["count"],
+                    -- use the same line that was already started for this iteration
+                    s[#s] = s[#s] ..
+                              generate_graph(pass["samples"], pass["count"],
                                              pass["count"], pass["peak"],
                                              pass["avg"], 0.9, 0.25)
                 end
@@ -341,6 +349,33 @@ local function append_perfdata(s, dedicated_page)
     end
 end
 
+local function append_general_perfdata(s, offset)
+    local perf_info = mp.get_property_native("perf-info") or {}
+    local count = 0
+    for _, data in ipairs(perf_info) do
+        count = count + 1
+    end
+    offset = max(1, min((offset or 1), count))
+
+    local i = 0
+    for _, data in ipairs(perf_info) do
+        i = i + 1
+        if i >= offset then
+            append(s, data.text or data.value, {prefix="["..tostring(i).."] "..data.name..":"})
+
+            if o.plot_perfdata and o.use_ass and data.value then
+                buf = perf_buffers[data.name]
+                if not buf then
+                    buf = {0, pos = 1, len = 50, max = 0}
+                    perf_buffers[data.name] = buf
+                end
+                graph_add_value(buf, data.value)
+                s[#s+1] = generate_graph(buf, buf.pos, buf.len, buf.max, nil, 0.8, 1)
+            end
+        end
+    end
+    return offset
+end
 
 local function append_display_sync(s)
     if not mp.get_property_bool("display-sync-active", false) then
@@ -428,16 +463,28 @@ local function add_file(s)
         append_property(s, "media-title", {prefix="Title:"})
     end
 
-    local fs = append_property(s, "file-size", {prefix="Size:"})
-    append_property(s, "file-format", {prefix="Format/Protocol:", nl=fs and "" or o.nl})
+    local editions = mp.get_property_number("editions")
+    local edition = mp.get_property_number("current-edition")
+    local ed_cond = (edition and editions > 1)
+    if ed_cond then
+        append_property(s, "edition-list/" .. tostring(edition) .. "/title",
+                       {prefix="Edition:"})
+        append_property(s, "edition-list/count",
+                        {prefix="(" .. tostring(edition + 1) .. "/", suffix=")", nl="",
+                         indent=" ", prefix_sep=" ", no_prefix_markup=true})
+    end
 
     local ch_index = mp.get_property_number("chapter")
     if ch_index and ch_index >= 0 then
-        append_property(s, "chapter-list/" .. tostring(ch_index) .. "/title", {prefix="Chapter:"})
+        append_property(s, "chapter-list/" .. tostring(ch_index) .. "/title", {prefix="Chapter:",
+                        nl=ed_cond and "" or o.nl})
         append_property(s, "chapter-list/count",
                         {prefix="(" .. tostring(ch_index + 1) .. "/", suffix=")", nl="",
                          indent=" ", prefix_sep=" ", no_prefix_markup=true})
     end
+
+    local fs = append_property(s, "file-size", {prefix="Size:"})
+    append_property(s, "file-format", {prefix="Format/Protocol:", nl=fs and "" or o.nl})
 
     local demuxer_cache = mp.get_property_native("demuxer-cache-state", {})
     if demuxer_cache["fw-bytes"] then
@@ -450,11 +497,6 @@ local function add_file(s)
         append(s, utils.format_bytes_humanized(demuxer_cache), {prefix="Total Cache:"})
         append(s, format("%.1f", demuxer_secs), {prefix="(", suffix=" sec)", nl="",
                no_prefix_markup=true, prefix_sep="", indent=o.prefix_sep})
-        local speed = mp.get_property_number("cache-speed", 0)
-        if speed > 0 then
-            append(s, utils.format_bytes_humanized(speed) .. "/s", {prefix="Speed:", nl="",
-                   indent=o.prefix_sep, no_prefix_markup=true})
-        end
     end
 end
 
@@ -501,7 +543,9 @@ local function add_video(s)
         append(s, r["h"], {prefix="x", nl="", indent=" ", prefix_sep=" ", no_prefix_markup=true})
     end
     append_property(s, "current-window-scale", {prefix="Window Scale:"})
-    append(s, format("%.2f", r["aspect"]), {prefix="Aspect Ratio:"})
+    if r["aspect"] ~= nil then
+        append(s, format("%.2f", r["aspect"]), {prefix="Aspect Ratio:"})
+    end
     append(s, r["pixelformat"], {prefix="Pixel Format:"})
 
     -- Group these together to save vertical space
@@ -557,17 +601,10 @@ local function eval_ass_formatting()
         o.nl = o.no_ass_nl
         o.indent = o.no_ass_indent
         o.prefix_sep = o.no_ass_prefix_sep
-        if not has_ansi() then
-            o.b1 = ""
-            o.b0 = ""
-            o.it1 = ""
-            o.it0 = ""
-        else
-            o.b1 = o.no_ass_b1
-            o.b0 = o.no_ass_b0
-            o.it1 = o.no_ass_it1
-            o.it0 = o.no_ass_it0
-        end
+        o.b1 = o.no_ass_b1
+        o.b0 = o.no_ass_b0
+        o.it1 = o.no_ass_it1
+        o.it0 = o.no_ass_it0
     end
 end
 
@@ -583,13 +620,41 @@ local function default_stats()
     return table.concat(stats)
 end
 
+local function scroll_vo_stats(stats, fixed_items, offset)
+    local ret = {}
+    local count = #stats - fixed_items
+    offset = max(1, min((offset or 1), count))
+
+    for i, line in pairs(stats) do
+        if i <= fixed_items or i >= fixed_items + offset then
+            ret[#ret+1] = stats[i]
+        end
+    end
+    return ret, offset
+end
 
 -- Returns an ASS string with extended VO stats
 local function vo_stats()
     local stats = {}
     eval_ass_formatting()
     add_header(stats)
+
+    -- first line (title) added next is considered fixed
+    local fixed_items = #stats + 1
     append_perfdata(stats, true)
+
+    local page = pages[o.key_page_2]
+    stats, page.offset = scroll_vo_stats(stats, fixed_items, page.offset)
+    return table.concat(stats)
+end
+
+local function perf_stats()
+    local stats = {}
+    eval_ass_formatting()
+    add_header(stats)
+    local page = pages[o.key_page_4]
+    append(stats, "", {prefix=o.nl .. o.nl .. page.desc .. ":", nl="", indent=""})
+    page.offset = append_general_perfdata(stats, page.offset)
     return table.concat(stats)
 end
 
@@ -648,15 +713,19 @@ local function cache_stats()
     end
     append(stats, state, {prefix = "State:"})
 
-    local total_graph = nil
+    local speed = info["raw-input-rate"] or 0
+    local speed_graph = nil
     if not display_timer.oneshot and o.use_ass then
-        total_graph = generate_graph(cache_total_buf, cache_total_buf.pos,
-                                     cache_total_buf.len, cache_total_buf.max,
+        speed_graph = generate_graph(cache_speed_buf, cache_speed_buf.pos,
+                                     cache_speed_buf.len, cache_speed_buf.max,
                                      nil, 0.8, 1)
-        total_graph = o.prefix_sep .. total_graph
+        speed_graph = o.prefix_sep .. speed_graph
     end
+    append(stats, utils.format_bytes_humanized(speed) .. "/s", {prefix="Speed:",
+        suffix=speed_graph})
+
     append(stats, utils.format_bytes_humanized(info["total-bytes"]),
-           {prefix = "Total RAM:", suffix = total_graph})
+           {prefix = "Total RAM:"})
     append(stats, utils.format_bytes_humanized(info["fw-bytes"]),
            {prefix = "Forward RAM:"})
 
@@ -688,12 +757,6 @@ local function cache_stats()
     return table.concat(stats)
 end
 
-local function graph_add_value(graph, value)
-    graph.pos = (graph.pos % graph.len) + 1
-    graph[graph.pos] = value
-    graph.max = max(graph.max, value)
-end
-
 -- Record 1 sample of cache statistics.
 -- (Unlike record_data(), this does not return a function, but runs directly.)
 local function record_cache_stats()
@@ -708,7 +771,7 @@ local function record_cache_stats()
         graph_add_value(cache_ahead_buf, b - a)
     end
 
-    graph_add_value(cache_total_buf, info["total-bytes"])
+    graph_add_value(cache_speed_buf, info["raw-input-rate"] or 0)
 end
 
 cache_recorder_timer = mp.add_periodic_timer(0.25, record_cache_stats)
@@ -718,8 +781,9 @@ cache_recorder_timer:kill()
 curr_page = o.key_page_1
 pages = {
     [o.key_page_1] = { f = default_stats, desc = "Default" },
-    [o.key_page_2] = { f = vo_stats, desc = "Extended Frame Timings" },
+    [o.key_page_2] = { f = vo_stats, desc = "Extended Frame Timings", scroll = true },
     [o.key_page_3] = { f = cache_stats, desc = "Cache Statistics" },
+    [o.key_page_4] = { f = perf_stats, desc = "Internal performance info", scroll = true },
 }
 
 
@@ -770,11 +834,47 @@ local function clear_screen()
     if o.persistent_overlay then mp.set_osd_ass(0, 0, "") else mp.osd_message("", 0) end
 end
 
+local function scroll_delta(d)
+    if display_timer.oneshot then display_timer:kill() ; display_timer:resume() end
+    pages[curr_page].offset = (pages[curr_page].offset or 1) + d
+    print_page(curr_page)
+end
+local function scroll_up() scroll_delta(-o.scroll_lines) end
+local function scroll_down() scroll_delta(o.scroll_lines) end
+
+local function reset_scroll_offsets()
+    for _, page in pairs(pages) do
+        page.offset = nil
+    end
+end
+local function bind_scroll()
+    if not scroll_bound then
+        mp.add_forced_key_binding(o.key_scroll_up, o.key_scroll_up, scroll_up, {repeatable=true})
+        mp.add_forced_key_binding(o.key_scroll_down, o.key_scroll_down, scroll_down, {repeatable=true})
+        scroll_bound = true
+    end
+end
+local function unbind_scroll()
+    if scroll_bound then
+        mp.remove_key_binding(o.key_scroll_up)
+        mp.remove_key_binding(o.key_scroll_down)
+        scroll_bound = false
+    end
+end
+local function update_scroll_bindings(k)
+    if (pages[k].scroll) then
+        bind_scroll()
+    else
+        unbind_scroll()
+    end
+end
 
 -- Add keybindings for every page
 local function add_page_bindings()
     local function a(k)
         return function()
+            reset_scroll_offsets()
+            update_scroll_bindings(k)
             curr_page = k
             print_page(k)
             if display_timer.oneshot then display_timer:kill() ; display_timer:resume() end
@@ -783,6 +883,7 @@ local function add_page_bindings()
     for k, _ in pairs(pages) do
         mp.add_forced_key_binding(k, k, a(k), {repeatable=true})
     end
+    update_scroll_bindings(curr_page)
 end
 
 
@@ -791,10 +892,12 @@ local function remove_page_bindings()
     for k, _ in pairs(pages) do
         mp.remove_key_binding(k)
     end
+    unbind_scroll()
 end
 
 
 local function process_key_binding(oneshot)
+    reset_scroll_offsets()
     -- Stats are already being displayed
     if display_timer:is_enabled() then
         -- Previous and current keys were oneshot -> restart timer
@@ -822,6 +925,10 @@ local function process_key_binding(oneshot)
             -- Will stop working if "vsync-jitter" property change notification
             -- changes, but it's fine for an internal script.
             mp.observe_property("vsync-jitter", "none", recorder)
+        end
+        if not oneshot then
+            cache_ahead_buf = {0, pos = 1, len = 50, max = 0}
+            cache_speed_buf = {0, pos = 1, len = 50, max = 0}
             cache_recorder_timer:resume()
         end
         display_timer:kill()
@@ -857,8 +964,11 @@ mp.add_forced_key_binding(o.key_toggle, "display-stats-toggle", function() proce
 -- Single invocation bindings without key, can be used in input.conf to create
 -- bindings for a specific page: "e script-binding stats/display-page-2"
 for k, _ in pairs(pages) do
-    mp.add_forced_key_binding(nil, "display-page-" .. k, function() process_key_binding(true) end,
-        {repeatable=true})
+    mp.add_key_binding(nil, "display-page-" .. k,
+        function()
+            curr_page = k
+            process_key_binding(true)
+        end, {repeatable=true})
 end
 
 -- Reprint stats immediately when VO was reconfigured, only when toggled

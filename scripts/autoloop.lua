@@ -1,31 +1,41 @@
 -- https://github.com/zc62/mpv-scripts/blob/master/autoloop.lua
+-- Automatically set loop-file=inf for duration <= given length. Default is 5s
+-- Use autoloop_duration=n in script-opts/autoloop.conf to set your preferred length
+-- Alternatively use script-opts=autoloop-autoloop_duration=n in mpv.conf (takes priority)
+-- Also disables the save-position-on-quit for this file, if it qualifies for looping.
 
-local autoloop_duration = 60
+
+require 'mp.options'
 
 function getOption()
-    local opt = mp.get_opt("autoloop-duration")
-    if (opt ~= nil) then
-        local test = tonumber(opt)
-        if (test ~= nil) then
-            autoloop_duration = test
-        end
-    end
+    -- Use recommended way to get options
+    local options = {autoloop_duration = 30}
+    read_options(options)
+    autoloop_duration = options.autoloop_duration
+    autoloop_duration = opt
 end
-getOption()
-
-local was_loop = mp.get_property_native("loop-file")
 
 function set_loop()
     local duration = mp.get_property_native("duration")
-    if duration ~= nil then
-        if duration  < autoloop_duration + 0.001 then
-            mp.command("set loop-file inf")
-        else
-            mp.set_property_native("loop-file", was_loop)
-        end
-    else
-        mp.set_property_native("loop-file", was_loop)
+
+    -- Checks whether the loop status was changed for the last file
+    was_loop = mp.get_property_native("loop-file")
+
+    -- Cancel operation if there is no file duration
+    if not duration then
+        return
+    end
+
+    -- Loops file if was_loop is false, and file meets requirements
+    if not was_loop and duration <= autoloop_duration then
+        mp.set_property_native("loop-file", true)
+        mp.set_property_bool("file-local-options/save-position-on-quit", false)
+        -- Unloops file if was_loop is true, and file does not meet requirements
+    elseif was_loop and duration > autoloop_duration then
+        mp.set_property_native("loop-file", false)
     end
 end
 
+
+getOption()
 mp.register_event("file-loaded", set_loop)
