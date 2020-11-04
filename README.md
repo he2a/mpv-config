@@ -23,7 +23,7 @@ Custom key bindings can be added from `input.conf` file. Refer to the [manual](h
 - <kbd>SPACE</kbd> - Play or Pause.
 - <kbd>INS</kbd> - Cycle subtitle.
 - <kbd>DEL</kbd> - Cycle audio.
-- <kbd>\</kbd> - Toggle Dynamic Range Compression filter for audio.
+- <kbd> \ </kbd> - Toggle Dynamic Range Compression filter for audio.
 - <kbd>q</kbd> - Quit.
 - <kbd>Q</kbd> - Save position and quit.
 - <kbd>s</kbd> - Screenshot.
