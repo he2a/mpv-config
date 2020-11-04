@@ -13,34 +13,34 @@ Custom key bindings can be added from `input.conf` file. Refer to the [manual](h
 
 ### Keyboard Bindings:
 
-- `RIGHT or LEFT` - Next or Previous file in playlist.
-- `UP or DOWN` - Next or Previous chapter.
-- `PGUP or PGDN` - Frame step up or down.
-- `HOME or END` - Increase or Decrease speed by 5%.
-- `+ or -` - Increase or Decrease volume.
-- `* or /` - Increase or Decrease audio delay.
-- `0 to 9` - Seek video to n% absolute position.
-- `SPACE` - Play or Pause.
-- `INS` - Cycle subtitle.
-- `DEL` - Cycle audio.
-- `\` - Toggle Dynamic Range Compression filter for audio.
-- `q` - Quit.
-- `Q` - Save position and quit.
-- `s` - Screenshot.
-- `l` - Loop file.
-- `a` - Cycle audio devices.
-- `A` - Toggle audio pitch correction.
-- `S` - Keep aspect ratio of video on resize.
-- `m` - Mute.
-- `c` - Auto crop black bars.
-- `d` - Auto deinterlace video.
-- `u` - Override subtitle style.
-- `v` - Toggle subtitle visibility.
-- `w` - Resize window.
-- `n` - Keep window on top.
-- `b` - Toggle border.
-- `r` - Rotate video.
-- `i` - Toggle video stats, change page with `1`, `2`, `3`.
+- <kbd>RIGHT</kbd> or <kbd>LEFT</kbd> - Next or Previous file in playlist.
+- <kbd>UP</kbd> or <kbd>DOWN</kbd> - Next or Previous chapter.
+- <kbd>PGUP</kbd> or <kbd>PGDN</kbd> - Frame step up or down.
+- <kbd>HOME</kbd> or <kbd>END</kbd> - Increase or Decrease speed by 5%.
+- <kbd>+</kbd> or <kbd>-</kbd> - Increase or Decrease volume.
+- <kbd>*</kbd> or <kbd>/</kbd> - Increase or Decrease audio delay.
+- <kbd>0</kbd> to <kbd>9</kbd> - Seek video to n% absolute position.
+- <kbd>SPACE</kbd> - Play or Pause.
+- <kbd>INS</kbd> - Cycle subtitle.
+- <kbd>DEL</kbd> - Cycle audio.
+- <kbd>\</kbd> - Toggle Dynamic Range Compression filter for audio.
+- <kbd>q</kbd> - Quit.
+- <kbd>Q</kbd> - Save position and quit.
+- <kbd>s</kbd> - Screenshot.
+- <kbd>l</kbd> - Loop file.
+- <kbd>a</kbd> - Cycle audio devices.
+- <kbd>A</kbd> - Toggle audio pitch correction.
+- <kbd>S</kbd> - Keep aspect ratio of video on resize.
+- <kbd>m</kbd> - Mute.
+- <kbd>c</kbd> - Auto crop black bars.
+- <kbd>d</kbd> - Auto deinterlace video.
+- <kbd>u</kbd> - Override subtitle style.
+- <kbd>v</kbd> - Toggle subtitle visibility.
+- <kbd>w</kbd> - Resize window.
+- <kbd>n</kbd> - Keep window on top.
+- <kbd>b</kbd> - Toggle border.
+- <kbd>r</kbd> - Rotate video.
+- <kbd>i</kbd> - Toggle video stats, change page with <kbd>1</kbd>, <kbd>2</kbd>, <kbd>3</kbd>.
 
 ### Mouse Bindings:
 - `Double Click` - Toggle fullscreen.
