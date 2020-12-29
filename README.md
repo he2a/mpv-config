@@ -1,4 +1,4 @@
-# MPV Configuration for Windows Build
+# Personal mpv Configuration for Windows
 
 <p align="center"><img width=100% src="https://raw.githubusercontent.com/he2a/mpv-config/master/images/preview.jpg" alt="MPV Screenshot"></p>
 
@@ -54,8 +54,8 @@ Custom key bindings can be added from `input.conf` file. Refer to the [manual](h
 Various GLSL shaders can be toggled from menu. Note that these shaders require sufficiently powerful GPU and will result in frame skips if used in a low power GPU. Check video stats by pressing `i` and see if it results in frame skips or worse A-V desynchronization. The shaders are divided into four groups.
 - Denoise shaders help reduce noise or grains from poor source. Mean and Mode are general purpose and does light denoising. The DenoiseCNN is best used for animated work and does heavy denoising.
 - Sharpen shaders increase the overall sharpness of video. The adaptive sharpen is general purpose whereas DeblurCNN is best for animated work.
-- Prescaler shaders upscales luma plane by 2X using neural network for better upscaling than conventional scaler. Note that these won't work if video is more than half the screen resolution. FSRCNNX 2X and SSIMSuperres are suited for general video whereas Anime4K variants and FSRCNNX 2X Line Art version is suited for animated content.
-- Other shaders include Darken and Thin Lines which when combined perceptually improves quality of animated scenes, ResidualCNN shader fixes resize related artifacts, KrigBilateral is a decent chroma upscaler and SSIMDownscale is a decent downscaler.
+- Prescaler shaders upscales luma plane by 2X using neural network for better upscaling than conventional scaler. Note that these won't work if video is more than half the screen resolution. FSRCNNX 2X and SSIMSuperres are suited for general video whereas Anime4K variants and FSRCNNX 2X Line Art version is suited for animated content. On the other hand, KrigBilateral is a decent chroma upscaler 
+- Other shaders include Darken and Thin Lines which when combined perceptually improves quality of animated scenes, Residual shaders which fixes resize related artifacts, SSIMDownscale which is a decent downscaler and Acme fast 0.5X downscale which halves video size fast.
 
 ## System Requirement
-This config was tested in Windows 10 build 2004 and works well with low end integrated GPU like Intel HD Graphics 620 (without any shaders or interpolation) and works fully with AMD RX 580 with resonable combination of shaders.
+This config was tested in Windows 10 build 20H2 and works well with low end integrated GPU like Intel HD Graphics 620 (without any shaders or interpolation) and works fully with AMD RX 580 with resonable combination of shaders.

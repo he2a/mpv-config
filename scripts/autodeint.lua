@@ -154,4 +154,4 @@ function select_filter()
     end
 end
 
-mp.add_forced_key_binding("d", script_name, start_detect)
+mp.add_key_binding("d", script_name, start_detect)

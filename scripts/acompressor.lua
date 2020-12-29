@@ -1,10 +1,4 @@
 -- https://github.com/mpv-player/mpv/blob/master/TOOLS/lua/acompressor.lua
-  
--- This script adds control to the dynamic range compression ffmpeg
--- filter including key bindings for adjusting parameters.
---
--- See https://ffmpeg.org/ffmpeg-filters.html#acompressor for explanation
--- of the parameteres.
 
 local mp = require 'mp'
 local options = require 'mp.options'
@@ -138,7 +132,7 @@ local function update_param(name, increment)
 	mp.msg.error('Unknown parameter "' .. name .. '"')
 end
 
-mp.add_forced_key_binding(o.key_toggle, "toggle-acompressor", toggle_acompressor)
+mp.add_key_binding(o.key_toggle, "toggle-acompressor", toggle_acompressor)
 mp.register_script_message('update-param', update_param)
 
 for _,param in pairs(params) do
