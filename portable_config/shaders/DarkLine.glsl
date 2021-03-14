@@ -182,5 +182,3 @@ vec4 hook() {
 	float c = (MMKERNEL_tex(HOOKED_pos).x) * STRENGTH;
 	return vec4(clamp(c + L_tex(HOOKED_pos).x, 0, L_tex(HOOKED_pos).x), HOOKED_tex(HOOKED_pos).yz, 0);
 }
-
-

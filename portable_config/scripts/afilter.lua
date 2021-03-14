@@ -32,7 +32,7 @@ drc: Enable to compress the dynamic range of audio resulting in quieter parts
      threshold: Triggered if signal in dB rises above this level.
 	 
 eq_enabled : Start with equalizer enabled.
-drc_enabled: Start with compressor enabled.
+dc_enabled: Start with compressor enabled.
 dm_enabled : Start with stereo downmix enabled.
 
 --]]
@@ -56,8 +56,8 @@ local bands = {
 
 -- Settings --
 
-local preamp = -2.7
-local bands = {
+preamp = -2.7
+bands = {
   {freq = 2300, width = {'q', 4.0}, gain = 1.0},
   {freq = 3000, width = {'q', 4.0}, gain = -1.0},
   {freq = 4390, width = {'q', 7.0}, gain = 1.0},
@@ -67,7 +67,7 @@ local bands = {
   {freq = 10420, width = {'q', 2.0}, gain = 1.3}
 }
 
-local drc = {
+drc = {
   threshold = -20,
   ratio = 4,
   attack = 20,
@@ -76,11 +76,17 @@ local drc = {
   knee = 3
 }
 
-local eq_enabled = true
-local drc_enabled = false
-local dm_enabled = false
+eq_enabled = true
+dc_enabled = false
 
 -- Code --
+
+dm_enabled = false
+
+local init_done = false
+local eq_tog = false
+local dc_tog = false
+local dm_tog = false
 
 local function check_channel()
   local c = mp.get_property_number('audio-params/channel-count')
@@ -92,7 +98,7 @@ local function check_channel()
 end
 
 local function push_preamp()
-  if eq_enabled then 
+  if eq_tog then 
     return 'no-osd af add lavfi=[volume=volume=' .. preamp .. 'dB:precision=fixed]'
   else
     return 'no-osd af remove lavfi=[volume=volume=' .. preamp .. 'dB:precision=fixed]'
@@ -100,7 +106,7 @@ local function push_preamp()
 end
 
 local function push_eq(filter)
-  if eq_enabled then 
+  if eq_tog then 
     return 'no-osd af add lavfi=[equalizer=f=' .. filter.freq .. ':width_type=' .. filter.width[1] .. ':w=' .. filter.width[2] .. ':g=' .. filter.gain .. ']'
   else
     return 'no-osd af remove lavfi=[equalizer=f=' .. filter.freq .. ':width_type=' .. filter.width[1] .. ':w=' .. filter.width[2] .. ':g=' .. filter.gain .. ']'
@@ -108,7 +114,7 @@ local function push_eq(filter)
 end
 
 local function push_drc()
-  if drc_enabled then
+  if dc_tog then
     return 'no-osd af add acompressor=threshold=' .. drc.threshold .. 'dB:ratio=' .. drc.ratio .. ':attack=' .. drc.attack .. ':release=' .. drc.release .. ':makeup=' .. drc.makeup .. 'dB:knee=' .. drc.knee .. 'dB'
   else
     return 'no-osd af remove acompressor=threshold=' .. drc.threshold .. 'dB:ratio=' .. drc.ratio .. ':attack=' .. drc.attack .. ':release=' .. drc.release .. ':makeup=' .. drc.makeup .. 'dB:knee=' .. drc.knee .. 'dB'
@@ -118,12 +124,12 @@ end
 local function push_dm(chn)
   local filter
   if chn < 7 then
-    filter = 'pan=stereo|FL=0.5*FC+0.707*FL+0.707*BL+0.5*LFE|FR=0.5*FC+0.707*FR+0.707*BR+0.5*LFE'
+    filter = 'pan=stereo|FL=0.5*FC+0.707*FL+0.707*BL+0.5*LFE|FR=0.5*FC+0.707*FR+0.707*BR+0.5*LFE,dynaudnorm=f=300:g=31:p=0.95:m=3'
   else
-	filter = 'pan=stereo|FL<0.5*FC+0.3*FLC+0.3*FL+0.3*BL+0.3*SL+0.5*LFE|FR<0.5*FC+0.3*FRC+0.3*FR+0.3*BR+0.3*SR+0.5*LFE'
+	filter = 'pan=stereo|FL<0.5*FC+0.3*FLC+0.3*FL+0.3*BL+0.3*SL+0.5*LFE|FR<0.5*FC+0.3*FRC+0.3*FR+0.3*BR+0.3*SR+0.5*LFE,dynaudnorm=f=300:g=31:p=0.95:m=3'
   end
   
-  if dm_enabled then 
+  if dm_tog then 
     return 'no-osd af add lavfi=[' .. filter .. ']'
   else
     return 'no-osd af remove lavfi=[' .. filter .. ']'
@@ -141,37 +147,60 @@ local function updateEQ()
 end
 
 local function toggle_drc()
-  drc_enabled = not drc_enabled
+  dc_tog = not dc_tog
   mp.command(push_drc())
-  if drc_enabled then mp.osd_message("Dynamic Range Compressor ON") else mp.osd_message("Dynamic Range Compressor OFF") end
+  if dc_tog then mp.osd_message("Dynamic Range Compressor ON") else mp.osd_message("Dynamic Range Compressor OFF") end
 end
 
 local function toggle_eq()
-  eq_enabled = not eq_enabled
+  eq_tog = not eq_tog
   updateEQ()
-  if eq_enabled then mp.osd_message("Equalizer ON") else mp.osd_message("Equalizer OFF") end
+  if eq_tog then mp.osd_message("Equalizer ON") else mp.osd_message("Equalizer OFF") end
 end
 
 local function toggle_downmix()
   local c = check_channel()
   if c > 2 then 
-    dm_enabled = not dm_enabled
+    dm_tog = not dm_tog
     mp.command(push_dm(c))
-    if dm_enabled then mp.osd_message("Downmixing " .. c .. " Channels to Stereo") else mp.osd_message("Downmixing OFF") end
+    if dm_tog then mp.osd_message("Downmixing " .. c .. " Channels to Stereo") else mp.osd_message("Downmixing OFF") end
   else 
     mp.osd_message("Downmixing Disabled")
   end
 end
 
-local function init_filters()
+local function start_filters()
   local c = check_channel()
-  if eq_enabled then updateEQ() end
-  if drc_enabled then mp.command(push_drc()) end
-  if dm_enabled and c > 2 then mp.command(push_dm(c)) end
+  if eq_tog then updateEQ() end
+  if dc_tog then mp.command(push_drc()) end
+  if dm_tog and c > 2 then mp.command(push_dm(c)) end
+end
+
+function init_filters()
+  if not init_done then
+	init_done = not init_done
+	eq_tog = eq_enabled
+	dc_tog = dc_enabled
+	dm_tog = dm_enabled
+	start_filters()
+  end
+end
+
+function deinit_filters()
+  init_done = false
+  eq_tog = true
+  dc_tog = true
+  dm_tog = true
+  toggle_eq()
+  toggle_drc()
+  toggle_downmix()
 end
 
 mp.add_key_binding('e', "toggle-eq", toggle_eq)
 mp.add_key_binding('\\', "toggle-drc", toggle_drc)
 mp.add_key_binding('E', "toggle-dm", toggle_downmix)
+
+-- mp.register_event('file-loaded', init_filters())
+-- mp.register_event('end-file', deinit_filters())
 
 init_filters() -- Initializes the filter at start
