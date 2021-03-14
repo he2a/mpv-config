@@ -33,7 +33,6 @@ drc: Enable to compress the dynamic range of audio resulting in quieter parts
 	 
 eq_enabled : Start with equalizer enabled.
 dc_enabled: Start with compressor enabled.
-dm_enabled : Start with stereo downmix enabled.
 
 --]]
 
@@ -56,15 +55,14 @@ local bands = {
 
 -- Settings --
 
-preamp = -2.7
+preamp = 0
 bands = {
-  {freq = 2300, width = {'q', 4.0}, gain = 1.0},
-  {freq = 3000, width = {'q', 4.0}, gain = -1.0},
-  {freq = 4390, width = {'q', 7.0}, gain = 1.0},
-  {freq = 5840, width = {'q', 4.0}, gain = -8.2},
-  {freq = 7300, width = {'q', 7.0}, gain = 2.5},
-  {freq = 8220, width = {'q', 5.0}, gain = -11.0},
-  {freq = 10420, width = {'q', 2.0}, gain = 1.3}
+  {freq = 64, width = {'o', 3.3}, gain = 0},   -- 20Hz - 200Hz
+  {freq = 400, width = {'o', 2.0}, gain = 0},  -- 200Hz - 800Hz
+  {freq = 1250, width = {'o', 1.3}, gain = 0}, -- 800Hz - 2kHz
+  {freq = 2830, width = {'o', 1.0}, gain = 0}, -- 2kHz - 4kHz
+  {freq = 5600, width = {'o', 1.0}, gain = 0}, -- 4kHz - 8kHz
+  {freq = 12500, width = {'o', 1.3}, gain = 0} -- 8kHz - 20kHz
 }
 
 drc = {
@@ -76,12 +74,11 @@ drc = {
   knee = 3
 }
 
-eq_enabled = true
+eq_enabled = false
 dc_enabled = false
+dm_enabled = false
 
 -- Code --
-
-dm_enabled = false
 
 local init_done = false
 local eq_tog = false
