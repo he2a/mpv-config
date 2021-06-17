@@ -1,61 +1,136 @@
 --[[
 
-A simple lua script for togglable equalizer, dynamic range compressor, stereo downmix and 
-other filters yet to come.
+afilter.lua - Simple lua script for toggling different inbuilt audio filters.
 
-Options:
-preamp: Set preamp to avoid clipping.
-bands : Add {freq = <frequency>, width = {'<type>', <value>}, gain = <gain>}
-        to the bands for each modification of frequency, separated by comma.
-	   
-        freq : Set the filter’s central frequency in Hz.
-        width: Set the bandwidth of filter
-        type : Set method to specify bandwidth of filter.
-               h  Hz
-               q  Q-Factor 
-               o  octave 
-               s  slope
-        value: Set the magnitude of the bandwidth
-        gain : Set the required gain or attenuation in dB.
+Equalizer  : Toggleable versatile equalizer based on ffmpeg equalizer filter which adds
+a two-pole peaking equalisation filter.
 
-drc: Enable to compress the dynamic range of audio resulting in quieter parts 
-     getting louder.
+With this filter, the signal-level at and around a selected frequency can be increased
+or decreased, while all other frequencies is unchanged. To produce complex equalisation
+curves, it can be used several times, each with a different central frequency. 
 
-	 ratio    : Ratio by which the signal is changed.
-	 attack   : Amount of ms the signal has to rise above the threshold before 
-	            it triggers.
-	 release  : Amount of ms the signal has to fall below the threshold before 
-	            it is restored.
-	 makeup   : Amount in dB the signal will be amplified after processing.
-	 knee     : Curve the sharp knee around threshold dB to enter gain reduction
-	            more softly. 
-     threshold: Triggered if signal in dB rises above this level.
+Add {freq = <frequency>, width = {'<type>', <value>}, gain = <gain>} to the bands for 
+each modification of frequency, separated by comma. 
+
+preamp     : Set preamp to avoid clipping.
+
+bands 
+  freq     : Set the filter’s central frequency in Hz.
+  width    : Set the bandwidth of filter
+  type     : Set type of bandwidth of filter. (h:Hz, q:Q-Factor, o:Octave, s:Slope)
+  value    : Set the magnitude of the bandwidth
+  gain     : Set the required gain or attenuation in dB.
+
+Acompressor: Toggleable dynamic audio compressor based on ffmpeg acompressor filter which 
+is mainly used to reduce the dynamic range of a signal. 
+
+Compression is done by detecting the volume above a chosen level threshold and dividing it 
+by the factor set with ratio. So if you set the threshold to -12dB and your signal reaches 
+-6dB a ratio of 2:1 will result in a signal at -9dB.
+
+The reduction can be levelled over the time by setting attack which determines how long the 
+signal has to rise above the threshold before any reduction will occur and release sets the 
+time the signal has to fall below the threshold to reduce the reduction again. 
+
+The overall reduction of the signal can be made up afterwards with the makeup setting. To 
+gain a softer entry in the compression the knee flattens the hard edge at the threshold 
+in the range of the chosen decibels. 
+
+drc
+	ratio    : Ratio by which the signal is changed.
+	attack   : Duration in ms the signal has to rise before it triggers.
+	release  : Duration in ms the signal has to fall before it is restored.
+	makeup   : Amount in dB the signal will be amplified after processing.
+	knee     : Curve knee around threshold to enter reduction more softly. 
+  threshold: Triggered if signal in dB rises above this level.
 	 
-eq_enabled : Start with equalizer enabled.
-dc_enabled: Start with compressor enabled.
+dynaudnorm : Toggleable dynamic audio normalizer based on ffmpeg dynaudnorm filter which adds 
+a certain amount of gain to the input audio in order to bring its peak magnitude to a target 
+level without applying "dynamic range compressing". It will retain 100% of the dynamic range 
+within each section of the audio file. 
+
+The Dynamic Audio Normalizer processes the input audio in small chunks, set by frame (in ms). 
+The filter’s window size is specified in gauss, which should be an odd number. For example, 
+gauss size of 5 takes into account the current frame, as well as the 2 preceding and subsequent
+frames and with a frame of 400ms, brings the total analysis time of 2 seconds. 
+
+The ratio determines the maximum gain of the audio while the peak determines the maximum peak 
+the filter will try to approach. The minthres specifies the lowest permissible magnitude level 
+for the audio input which will be normalized.
+
+dnm
+  frame    : Size of audio sample frame in ms.
+	gauss    : Number of sample frames to be analyzed. Must be an odd number.
+	ratio    : Ratio by which the signal is changed.
+	peak     : Maximum peak to be reached.
+  minthres : Triggered if signal rises above this level.
+
+
+eqr_enabled: Start with equalizer enabled.
+drc_enabled: Start with compressor enabled.
+dnm_enabled: Start with normalizer enabled.
+
+Whitelist  : Whitelists the autostart of the filter to one of the four categories.
+'audio' - For audio files
+'video' - For video files
+'movie' - For video files longer than 15 secs (default)
+'blank' - For all files
+
+whitelist_eqr = Set whitelist for equalizer
+whitelist_drc = Set whitelist for compressor
+whitelist_dnm = Set whitelist for normalizer
 
 --]]
 
---[[ 
+--[[
 
-Personal settings for reducing treble sharpness in Beyerdynamic DT990 Pro
+-- Example settings
 
-local preamp = -2.7
-local bands = {
-  {freq = 2300, width = {'q', 4.0}, gain = 1.0},
-  {freq = 3000, width = {'q', 4.0}, gain = -1.0},
-  {freq = 4390, width = {'q', 7.0}, gain = 1.0},
-  {freq = 5840, width = {'q', 4.0}, gain = -8.2},
-  {freq = 7300, width = {'q', 7.0}, gain = 2.5},
-  {freq = 8220, width = {'q', 5.0}, gain = -11.0},
-  {freq = 10420, width = {'q', 2.0}, gain = 1.3}
+-- Equalizer settings for Beyerdynamics DT 990 Pro
+preamp = -1.0
+
+bands = {
+  {freq = 2300,  width = {'q', 4.0}, gain = 1.0  },
+  {freq = 3000,  width = {'q', 4.0}, gain = -1.0 },
+  {freq = 4390,  width = {'q', 7.0}, gain = 1.0  },
+  {freq = 5840,  width = {'q', 4.0}, gain = -8.2 },
+  {freq = 7300,  width = {'q', 7.0}, gain = 2.5  },
+  {freq = 8220,  width = {'q', 5.0}, gain = -11.0},
+  {freq = 10420, width = {'q', 2.0}, gain = 1.3  }
 }
 
+drc = {
+  knee = 2.8,
+  ratio = 2,
+  makeup = 8,
+  attack = 20,
+  release = 250,
+  threshold = -20
+}
+
+dnm = {
+  gauss = 5,
+  ratio = 4,
+  frame = 400,
+  peak = 0.95,
+  minthres = 0
+}
+
+eqr_enabled = true
+whitelist_eqr = 'audio'
+
+drc_enabled = false
+whitelist_drc = 'blank'
+
+dnm_enabled = true
+whitelist_dnm = 'movie'
+
 --]]
 
--- Settings --
+-- User Settings -------------------------------------------------------------------------------------------------------------------------------------
 
 preamp = 0
+
 bands = {
   {freq = 64, width = {'o', 3.3}, gain = 0},   -- 20Hz - 200Hz
   {freq = 400, width = {'o', 2.0}, gain = 0},  -- 200Hz - 800Hz
@@ -66,138 +141,176 @@ bands = {
 }
 
 drc = {
-  threshold = -20,
-  ratio = 4,
+  knee = 2.8,
+  ratio = 2,
+  makeup = 8,
   attack = 20,
   release = 250,
-  makeup = 8,
-  knee = 3
+  threshold = -20
 }
 
-eq_enabled = false
-dc_enabled = false
-dm_enabled = false
+dnm = {
+  gauss = 5,
+  ratio = 4,
+  frame = 400,
+  peak = 0.95,
+  minthres = 0
+}
 
--- Code --
+eqr_enabled = false
+whitelist_eqr = 'audio'
 
-local init_done = false
-local eq_tog = false
-local dc_tog = false
-local dm_tog = false
+drc_enabled = false
+whitelist_drc = 'blank'
 
-local function check_channel()
-  local c = mp.get_property_number('audio-params/channel-count')
-  if not c then 
-	return 0
+dnm_enabled = true
+whitelist_dnm = 'movie'
+
+
+-- Variables and general code ------------------------------------------------------------------------------------------------------------------------
+local med_type = nil
+local eqr_toggle = false
+local vid_length = 600
+local vid_aratio = 1.2
+local auto_delay = 0.1
+local eqr_whlist = whitelist_eqr
+local drc_whlist = whitelist_drc
+local dnm_whlist = whitelist_dnm
+local pre_filter = { enabled = false, syntax = 'volume=volume=' .. preamp .. 'dB:precision=fixed' }
+local drc_filter = { enabled = false, syntax = 'acompressor=threshold=' .. drc.threshold .. 'dB:ratio=' .. drc.ratio .. ':attack=' .. drc.attack .. ':release=' .. drc.release .. ':makeup=' .. drc.makeup .. 'dB:knee=' .. drc.knee .. 'dB' }
+local dnm_filter = { enabled = false, syntax = 'dynaudnorm=f=' .. dnm.frame .. ':g=' .. dnm.gauss .. ':m=' .. dnm.ratio .. ':p=' .. dnm.peak .. ':t=' .. dnm.minthres }
+
+local function type_check()
+  local vid = mp.get_property_native("vid") or false
+  local aid = mp.get_property_native("aid") or false
+  local fps = mp.get_property_native("estimated-vf-fps") or 0
+  local ar = mp.get_property_native("video-params/aspect") or 0
+  local tt = mp.get_property_native("duration") or 0
+  if not aid then
+    if not vid then
+      return 'avnil'
+    else
+      return 'anull'
+    end
+  elseif not vid or (fps <= 1) then
+    return 'audio'
+  elseif (ar >= vid_aratio) and (tt >= vid_length) then
+    return 'movie'
   else
-    return c
+    return 'video'
   end
 end
 
-local function push_preamp()
-  if eq_tog then 
-    return 'no-osd af add lavfi=[volume=volume=' .. preamp .. 'dB:precision=fixed]'
+local function type_compare(a, b)
+  if (a == 'blank') or (a == b) then
+    return true
+  elseif (a == 'video') and (b == 'movie') then
+    return true
   else
-    return 'no-osd af remove lavfi=[volume=volume=' .. preamp .. 'dB:precision=fixed]'
+    return false
   end
 end
 
-local function push_eq(filter)
-  if eq_tog then 
-    return 'no-osd af add lavfi=[equalizer=f=' .. filter.freq .. ':width_type=' .. filter.width[1] .. ':w=' .. filter.width[2] .. ':g=' .. filter.gain .. ']'
-  else
-    return 'no-osd af remove lavfi=[equalizer=f=' .. filter.freq .. ':width_type=' .. filter.width[1] .. ':w=' .. filter.width[2] .. ':g=' .. filter.gain .. ']'
-  end
-end
+-- Filter push code ----------------------------------------------------------------------------------------------------------------------------------
 
-local function push_drc()
-  if dc_tog then
-    return 'no-osd af add acompressor=threshold=' .. drc.threshold .. 'dB:ratio=' .. drc.ratio .. ':attack=' .. drc.attack .. ':release=' .. drc.release .. ':makeup=' .. drc.makeup .. 'dB:knee=' .. drc.knee .. 'dB'
+local function push_filter(filter)
+  if filter.enabled then
+    return 'no-osd af add ' .. filter.syntax
   else
-    return 'no-osd af remove acompressor=threshold=' .. drc.threshold .. 'dB:ratio=' .. drc.ratio .. ':attack=' .. drc.attack .. ':release=' .. drc.release .. ':makeup=' .. drc.makeup .. 'dB:knee=' .. drc.knee .. 'dB'
-  end
-end
-
-local function push_dm(chn)
-  local filter
-  if chn < 7 then
-    filter = 'pan=stereo|FL=0.5*FC+0.707*FL+0.707*BL+0.5*LFE|FR=0.5*FC+0.707*FR+0.707*BR+0.5*LFE,dynaudnorm=f=300:g=31:p=0.95:m=3'
-  else
-	filter = 'pan=stereo|FL<0.5*FC+0.3*FLC+0.3*FL+0.3*BL+0.3*SL+0.5*LFE|FR<0.5*FC+0.3*FRC+0.3*FR+0.3*BR+0.3*SR+0.5*LFE,dynaudnorm=f=300:g=31:p=0.95:m=3'
-  end
-  
-  if dm_tog then 
-    return 'no-osd af add lavfi=[' .. filter .. ']'
-  else
-    return 'no-osd af remove lavfi=[' .. filter .. ']'
+    return 'no-osd af remove ' .. filter.syntax
   end
 end
 
 local function updateEQ()
-  if preamp ~= 0 then mp.command(push_preamp()) end
+  if eqr_toggle and pre_filter.enabled then 
+    mp.command('no-osd af add ' .. pre_filter.syntax)
+  else
+    mp.command('no-osd af remove ' .. pre_filter.syntax)
+  end
   for i = 1, #bands do
     local f = bands[i]
     if f.gain ~= 0 then
-	  mp.command(push_eq(f))
+      if eqr_toggle then 
+        mp.command('no-osd af add equalizer=f=' .. f.freq .. ':width_type=' .. f.width[1] .. ':w=' .. f.width[2] .. ':g=' .. f.gain)
+      else
+        mp.command('no-osd af remove equalizer=f=' .. f.freq .. ':width_type=' .. f.width[1] .. ':w=' .. f.width[2] .. ':g=' .. f.gain)
+      end
     end
   end
 end
 
-local function toggle_drc()
-  dc_tog = not dc_tog
-  mp.command(push_drc())
-  if dc_tog then mp.osd_message("Dynamic Range Compressor ON") else mp.osd_message("Dynamic Range Compressor OFF") end
-end
+-- Filter toggle code --------------------------------------------------------------------------------------------------------------------------------
 
-local function toggle_eq()
-  eq_tog = not eq_tog
+local function toggle_eqr()
+  eqr_toggle = not eqr_toggle
   updateEQ()
-  if eq_tog then mp.osd_message("Equalizer ON") else mp.osd_message("Equalizer OFF") end
+  if eqr_toggle then mp.osd_message("Equalizer ON") else mp.osd_message("Equalizer OFF") end
 end
 
-local function toggle_downmix()
-  local c = check_channel()
-  if c > 2 then 
-    dm_tog = not dm_tog
-    mp.command(push_dm(c))
-    if dm_tog then mp.osd_message("Downmixing " .. c .. " Channels to Stereo") else mp.osd_message("Downmixing OFF") end
-  else 
-    mp.osd_message("Downmixing Disabled")
+local function toggle_drc()
+  drc_filter.enabled = not drc_filter.enabled
+  mp.command(push_filter(drc_filter))
+  if drc_filter.enabled then mp.osd_message("Dynamic Range Compressor ON") else mp.osd_message("Dynamic Range Compressor OFF") end
+end
+
+local function toggle_dnm()
+  dnm_filter.enabled = not dnm_filter.enabled
+  mp.command(push_filter(dnm_filter))
+  if dnm_filter.enabled then mp.osd_message("Dynamic Normalizer ON") else mp.osd_message("Dynamic Normalizer OFF") end
+end
+
+-- Init/Deinit code ----------------------------------------------------------------------------------------------------------------------------------
+
+local function init_filter()
+  if preamp ~= 0 then 
+    pre_filter.enabled = true
+  else
+    pre_filter.enabled = false 
   end
+  delay = mp.add_timeout(auto_delay,
+    function()
+      med_type = type_check()
+      if med_type ~= 'anull' then
+        if eqr_enabled and type_compare(eqr_whlist, med_type) then
+          eqr_toggle = eqr_enabled
+          updateEQ()
+        end
+        if drc_enabled and type_compare(drc_whlist, med_type) then 
+          drc_filter.enabled = drc_enabled
+          mp.command(push_filter(drc_filter))
+        end
+        if dnm_enabled and type_compare(dnm_whlist, med_type) then 
+          dnm_filter.enabled = dnm_enabled
+          mp.command(push_filter(dnm_filter))
+        end
+      end
+      delay:kill()
+      delay = nil
+    end
+  )
 end
 
-local function start_filters()
-  local c = check_channel()
-  if eq_tog then updateEQ() end
-  if dc_tog then mp.command(push_drc()) end
-  if dm_tog and c > 2 then mp.command(push_dm(c)) end
-end
-
-function init_filters()
-  if not init_done then
-	init_done = not init_done
-	eq_tog = eq_enabled
-	dc_tog = dc_enabled
-	dm_tog = dm_enabled
-	start_filters()
+local function deinit_filter()
+  if eqr_toggle then 
+    eqr_toggle = false
+	  updateEQ()
   end
+  if drc_filter.enabled then 
+    drc_filter.enabled = false
+    mp.command(push_filter(drc_filter))
+  end
+  if dnm_filter.enabled then 
+    dnm_filter.enabled = false
+    mp.command(push_filter(dnm_filter))
+  end
+  med_type = nil
 end
 
-function deinit_filters()
-  init_done = false
-  eq_tog = true
-  dc_tog = true
-  dm_tog = true
-  toggle_eq()
-  toggle_drc()
-  toggle_downmix()
-end
+-- Events and bindings code --------------------------------------------------------------------------------------------------------------------------
 
-mp.add_key_binding('e', "toggle-eq", toggle_eq)
+mp.add_key_binding('e', "toggle-eqr", toggle_eqr)
 mp.add_key_binding('\\', "toggle-drc", toggle_drc)
-mp.add_key_binding('E', "toggle-dm", toggle_downmix)
+mp.add_key_binding('E', "toggle-dnm", toggle_dnm)
 
--- mp.register_event('file-loaded', init_filters())
--- mp.register_event('end-file', deinit_filters())
-
-init_filters() -- Initializes the filter at start
+mp.register_event("file-loaded", init_filter)
+mp.register_event("end-file", deinit_filter)

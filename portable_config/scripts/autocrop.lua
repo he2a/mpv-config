@@ -1,4 +1,62 @@
--- https://github.com/mpv-player/mpv/blob/master/TOOLS/lua/autocrop.lua
+--[[
+This script uses the lavfi cropdetect filter to automatically
+insert a crop filter with appropriate parameters for the
+currently playing video.
+
+It will automatically crop the video, when playback starts.
+
+Also It registers the key-binding "C" (shift+c). You can manually
+crop the video by pressing the "C" (shift+c) key.
+
+If the "C" key is pressed again, the crop filter is removed
+restoring playback to its original state.
+
+The workflow is as follows: First, it inserts the filter
+vf=lavfi=cropdetect. After <detect_seconds> (default is 1)
+seconds, it then inserts the filter vf=crop=w:h:x:y, where
+w,h,x,y are determined from the vf-metadata gathered by
+cropdetect. The cropdetect filter is removed immediately after
+the crop filter is inserted as it is no longer needed.
+
+Since the crop parameters are determined from the 1 second of
+video between inserting the cropdetect and crop filters, the "C"
+key should be pressed at a position in the video where the crop
+region is unambiguous (i.e., not a black frame, black background
+title card, or dark scene).
+
+The default options can be overridden by adding
+script-opts-append=autocrop-<parameter>=<value> into mpv.conf
+
+List of available parameters (For default values, see <options>)：
+
+auto: bool - Whether to automatically apply crop at the start of
+    playback. If you don't want to crop automatically, set it to
+    false or add "script-opts-append=autocrop-auto=no" into
+    mpv.conf.
+
+auto_delay: seconds - Delay before starting crop in auto mode.
+    You can try to increase this value to avoid dark scene or
+    fade in at beginning. Automatic cropping will not occur if
+    the value is larger than the remaining playback time.
+
+detect_limit: number[0-255] - Black threshold for cropdetect.
+    Smaller values will generally result in less cropping.
+    See limit of https://ffmpeg.org/ffmpeg-filters.html#cropdetect
+
+detect_round: number[2^n] -  The value which the width/height
+    should be divisible by. Smaller values ​​have better detection
+    accuracy. If you have problems with other filters,
+    you can try to set it to 4 or 16.
+    See round of https://ffmpeg.org/ffmpeg-filters.html#cropdetect
+
+detect_min_ratio: number[0.0-1.0] - The ratio of the minimum clip
+    size to the original. If the picture is over cropped or under
+    cropped, try adjusting this value.
+
+detect_seconds: seconds - How long to gather cropdetect data.
+    Increasing this may be desirable to allow cropdetect more
+    time to collect data.
+--]]
 
 require "mp.msg"
 require 'mp.options'

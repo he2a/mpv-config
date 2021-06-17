@@ -1,7 +1,5 @@
--- https://gist.github.com/bitingsock/ad58ee5da560ecb922fa4a867ac0ecfd
-
+local api = "wasapi"
 local deviceList = {}
-
 local function cycle_adevice(s, e, d)
 	while s ~= e + d do -- until the loop would cycle back to the number we started on
 		if string.find(mp.get_property("audio-device"), deviceList[s].name, 1, true) then
@@ -12,10 +10,21 @@ local function cycle_adevice(s, e, d)
 					s = 0 --then start from the beginning
 				end
 				s = s + d --next device
-				if string.find(deviceList[s].name, "wasapi", 1, true) then
+				if string.find(deviceList[s].name, api, 1, true) then
 					mp.set_property("audio-device",deviceList[s].name)
-					print("audio="..deviceList[s].description)
-					mp.osd_message("audio="..deviceList[s].description)
+					deviceList[s].description = "• "..deviceList[s].description
+					local list = "Audio Device:\n"
+					for i=1,#deviceList do
+						if string.find(deviceList[i].name, api, 1, true) then
+							if deviceList[i].name~=deviceList[s].name then list = list.."◦ " end
+							list=list..deviceList[i].description.."\n"
+						end
+					end
+					if mp.get_property("vid")=="no" then 
+						print("audio="..deviceList[s].description) 
+					else 
+						mp.osd_message(list, 3)
+					end
 					return
 				end
 			end
@@ -34,4 +43,4 @@ local function cycle_forward()
 end
 
 mp.add_key_binding("a", "cycle_adevice", cycle_forward)
-mp.add_key_binding(nil, "cycleBack_adevice", cycle_back)
+mp.add_key_binding("A", "cycleBack_adevice", cycle_back)

@@ -1,4 +1,23 @@
--- https://github.com/mpv-player/mpv/blob/master/TOOLS/lua/autoload.lua
+-- This script automatically loads playlist entries before and after the
+-- the currently played file. It does so by scanning the directory a file is
+-- located in when starting playback. It sorts the directory entries
+-- alphabetically, and adds entries before and after the current file to
+-- the internal playlist. (It stops if it would add an already existing
+-- playlist entry at the same position - this makes it "stable".)
+-- Add at most 5000 * 2 files when starting a file (before + after).
+
+--[[
+To configure this script use file autoload.conf in directory script-opts (the "script-opts"
+directory must be in the mpv configuration directory, typically ~/.config/mpv/).
+
+Example configuration would be:
+
+disabled=no
+images=no
+videos=yes
+audio=yes
+
+--]]
 
 MAXENTRIES = 5000
 
@@ -28,7 +47,7 @@ function SetUnion (a,b)
 end
 
 EXTENSIONS_VIDEO = Set {
-    'mkv', 'avi', 'mp4', 'ogv', 'webm', 'rmvb', 'flv', 'wmv', 'mpeg', 'mpg', 'm4v', '3gp'
+    'mkv', 'avi', 'mp4', 'ogv', 'webm', 'rmvb', 'flv', 'wmv', 'mpeg', 'mpg', 'm4v', '3gp', 'gif'
 }
 
 EXTENSIONS_AUDIO = Set {
@@ -36,7 +55,7 @@ EXTENSIONS_AUDIO = Set {
 }
 
 EXTENSIONS_IMAGES = Set {
-    'jpg', 'jpeg', 'png', 'tif', 'tiff', 'gif', 'webp', 'svg', 'bmp'
+    'jpg', 'jpeg', 'png', 'tif', 'tiff', 'webp', 'svg', 'bmp'
 }
 
 EXTENSIONS = Set {}
@@ -184,11 +203,11 @@ function find_and_add_entries()
 
             if direction == -1 then
                 if pl_current == 1 then -- never add additional entries in the middle
-                    msg.info("Prepending " .. file)
+                    msg.debug("Prepending " .. file)
                     table.insert(append[-1], 1, filepath)
                 end
             else
-                msg.info("Adding " .. file)
+                msg.debug("Adding " .. file)
                 table.insert(append[1], filepath)
             end
         end
