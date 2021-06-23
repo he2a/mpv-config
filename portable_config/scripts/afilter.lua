@@ -117,12 +117,11 @@ dnm = {
 }
 
 eqr_enabled = true
-whitelist_eqr = 'audio'
-
 drc_enabled = false
-whitelist_drc = 'blank'
+dnm_enabled = false
 
-dnm_enabled = true
+whitelist_eqr = 'audio'
+whitelist_drc = 'blank'
 whitelist_dnm = 'movie'
 
 --]]
@@ -157,7 +156,7 @@ dnm = {
   minthres = 0
 }
 
-eqr_enabled = false
+eqr_enabled = true
 whitelist_eqr = 'audio'
 
 drc_enabled = false
