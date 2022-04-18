@@ -1,8 +1,6 @@
-//Anime4K v3.1 GLSL
-
 // MIT License
 
-// Copyright (c) 2019-2020 bloc97
+// Copyright (c) 2019-2021 bloc97
 // All rights reserved.
 
 // Permission is hereby granted, free of charge, to any person obtaining a copy
@@ -23,75 +21,54 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 // SOFTWARE.
 
-//!DESC Anime4K-v3.1-ThinLines-Kernel(X)
-//!HOOK NATIVE
+//!DESC Anime4K-v3.2-Thin-(HQ)-Luma
+//!HOOK MAIN
 //!BIND HOOKED
-//!SAVE LUMAD
-//!COMPONENTS 2
+//!SAVE LINELUMA
+//!COMPONENTS 1
 
-#define L_tex NATIVE_tex
+float get_luma(vec4 rgba) {
+	return dot(vec4(0.299, 0.587, 0.114, 0.0), rgba);
+}
 
 vec4 hook() {
-	vec2 d = HOOKED_pt;
+    return vec4(get_luma(HOOKED_tex(HOOKED_pos)), 0.0, 0.0, 0.0);
+}
+
+//!DESC Anime4K-v3.2-Thin-(HQ)-Sobel-X
+//!HOOK MAIN
+//!BIND LINELUMA
+//!SAVE LINESOBEL
+//!COMPONENTS 2
+
+vec4 hook() {
+	float l = LINELUMA_texOff(vec2(-1.0, 0.0)).x;
+	float c = LINELUMA_tex(LINELUMA_pos).x;
+	float r = LINELUMA_texOff(vec2(1.0, 0.0)).x;
 	
-	//[tl  t tr]
-	//[ l  c  r]
-	//[bl  b br]
-	float l = L_tex(HOOKED_pos + vec2(-d.x, 0)).x;
-	float c = L_tex(HOOKED_pos).x;
-	float r = L_tex(HOOKED_pos + vec2(d.x, 0)).x;
-	
-	
-	//Horizontal Gradient
-	//[-1  0  1]
-	//[-2  0  2]
-	//[-1  0  1]
 	float xgrad = (-l + r);
-	
-	//Vertical Gradient
-	//[-1 -2 -1]
-	//[ 0  0  0]
-	//[ 1  2  1]
 	float ygrad = (l + c + c + r);
 	
-	//Computes the luminance's gradient
-	return vec4(xgrad, ygrad, 0, 0);
+	return vec4(xgrad, ygrad, 0.0, 0.0);
 }
 
 
-//!DESC Anime4K-v3.1-ThinLines-Kernel(Y)
-//!HOOK NATIVE
-//!BIND HOOKED
-//!BIND LUMAD
-//!SAVE LUMAD
+//!DESC Anime4K-v3.2-Thin-(HQ)-Sobel-Y
+//!HOOK MAIN
+//!BIND LINESOBEL
+//!SAVE LINESOBEL
 //!COMPONENTS 1
 
 vec4 hook() {
-	vec2 d = HOOKED_pt;
+	float tx = LINESOBEL_texOff(vec2(0.0, -1.0)).x;
+	float cx = LINESOBEL_tex(LINESOBEL_pos).x;
+	float bx = LINESOBEL_texOff(vec2(0.0, 1.0)).x;
 	
-	//[tl  t tr]
-	//[ l cc  r]
-	//[bl  b br]
-	float tx = LUMAD_tex(HOOKED_pos + vec2(0, -d.y)).x;
-	float cx = LUMAD_tex(HOOKED_pos).x;
-	float bx = LUMAD_tex(HOOKED_pos + vec2(0, d.y)).x;
+	float ty = LINESOBEL_texOff(vec2(0.0, -1.0)).y;
+	float by = LINESOBEL_texOff(vec2(0.0, 1.0)).y;
 	
-	
-	float ty = LUMAD_tex(HOOKED_pos + vec2(0, -d.y)).y;
-	//float cy = LUMAD_tex(HOOKED_pos).y;
-	float by = LUMAD_tex(HOOKED_pos + vec2(0, d.y)).y;
-	
-	
-	//Horizontal Gradient
-	//[-1  0  1]
-	//[-2  0  2]
-	//[-1  0  1]
 	float xgrad = (tx + cx + cx + bx) / 8.0;
 	
-	//Vertical Gradient
-	//[-1 -2 -1]
-	//[ 0  0  0]
-	//[ 1  2  1]
 	float ygrad = (-ty + by) / 8.0;
 	
 	//Computes the luminance's gradient
@@ -100,156 +77,133 @@ vec4 hook() {
 }
 
 
-//!DESC Anime4K-v3.1-ThinLines-Kernel(X)
-//!HOOK NATIVE
+//!DESC Anime4K-v3.2-Thin-(HQ)-Gaussian-X
+//!HOOK MAIN
 //!BIND HOOKED
-//!BIND LUMAD
-//!SAVE LUMADG
+//!BIND LINESOBEL
+//!SAVE LINESOBEL
 //!COMPONENTS 1
 
-#define L_tex LUMAD_tex
+#define SPATIAL_SIGMA (2.0 * float(HOOKED_size.y) / 1080.0) //Spatial window size, must be a positive real number.
 
-#define SIGMA (HOOKED_size.y / 1080.0) * 2.0
-#define KERNELSIZE (SIGMA * 2.0 + 1.0)
+#define KERNELSIZE (max(int(ceil(SPATIAL_SIGMA * 2.0)), 1) * 2 + 1) //Kernel size, must be an positive odd integer.
+#define KERNELHALFSIZE (int(KERNELSIZE/2)) //Half of the kernel size without remainder. Must be equal to trunc(KERNELSIZE/2).
+#define KERNELLEN (KERNELSIZE * KERNELSIZE) //Total area of kernel. Must be equal to KERNELSIZE * KERNELSIZE.
 
 float gaussian(float x, float s, float m) {
-	return (1.0 / (s * sqrt(2.0 * 3.14159))) * exp(-0.5 * pow(abs(x - m) / s, 2.0));
+	float scaled = (x - m) / s;
+	return exp(-0.5 * scaled * scaled);
 }
 
-float lumGaussian(vec2 pos, vec2 d) {
-	float g = (L_tex(pos).x) * gaussian(0.0, SIGMA, 0.0);
-	g = g + (L_tex(pos - d).x + L_tex(pos + d).x) * gaussian(1.0, SIGMA, 0.0);
-	for (int i=2; float(i)<KERNELSIZE; i++) {
-		g = g + (L_tex(pos - (d * float(i))).x + L_tex(pos + (d * float(i))).x) * gaussian(float(i), SIGMA, 0.0);
+float comp_gaussian_x() {
+
+	float g = 0.0;
+	float gn = 0.0;
+	
+	for (int i=0; i<KERNELSIZE; i++) {
+		float di = float(i - KERNELHALFSIZE);
+		float gf = gaussian(di, SPATIAL_SIGMA, 0.0);
+		
+		g = g + LINESOBEL_texOff(vec2(di, 0.0)).x * gf;
+		gn = gn + gf;
+		
 	}
 	
-	return g;
+	return g / gn;
 }
 
 vec4 hook() {
-    return vec4(lumGaussian(HOOKED_pos, vec2(HOOKED_pt.x, 0)));
+    return vec4(comp_gaussian_x(), 0.0, 0.0, 0.0);
 }
 
 
-//!DESC Anime4K-v3.1-ThinLines-Kernel(Y)
-//!HOOK NATIVE
+//!DESC Anime4K-v3.2-Thin-(HQ)-Gaussian-Y
+//!HOOK MAIN
 //!BIND HOOKED
-//!BIND LUMAD
-//!BIND LUMADG
-//!SAVE LUMAD
-//!COMPONENTS 3
+//!BIND LINESOBEL
+//!SAVE LINESOBEL
+//!COMPONENTS 1
 
-#define L_tex LUMADG_tex
+#define SPATIAL_SIGMA (2.0 * float(HOOKED_size.y) / 1080.0) //Spatial window size, must be a positive real number.
 
-#define SIGMA (HOOKED_size.y / 1080.0) * 2.0
-#define KERNELSIZE (SIGMA * 2.0 + 1.0)
+#define KERNELSIZE (max(int(ceil(SPATIAL_SIGMA * 2.0)), 1) * 2 + 1) //Kernel size, must be an positive odd integer.
+#define KERNELHALFSIZE (int(KERNELSIZE/2)) //Half of the kernel size without remainder. Must be equal to trunc(KERNELSIZE/2).
+#define KERNELLEN (KERNELSIZE * KERNELSIZE) //Total area of kernel. Must be equal to KERNELSIZE * KERNELSIZE.
 
 float gaussian(float x, float s, float m) {
-	return (1.0 / (s * sqrt(2.0 * 3.14159))) * exp(-0.5 * pow(abs(x - m) / s, 2.0));
+	float scaled = (x - m) / s;
+	return exp(-0.5 * scaled * scaled);
 }
 
-float lumGaussian(vec2 pos, vec2 d) {
-	float g = (L_tex(pos).x) * gaussian(0.0, SIGMA, 0.0);
-	g = g + (L_tex(pos - d).x + L_tex(pos + d).x) * gaussian(1.0, SIGMA, 0.0);
-	for (int i=2; float(i)<KERNELSIZE; i++) {
-		g = g + (L_tex(pos - (d * float(i))).x + L_tex(pos + (d * float(i))).x) * gaussian(float(i), SIGMA, 0.0);
+float comp_gaussian_y() {
+
+	float g = 0.0;
+	float gn = 0.0;
+	
+	for (int i=0; i<KERNELSIZE; i++) {
+		float di = float(i - KERNELHALFSIZE);
+		float gf = gaussian(di, SPATIAL_SIGMA, 0.0);
+		
+		g = g + LINESOBEL_texOff(vec2(0.0, di)).x * gf;
+		gn = gn + gf;
+		
 	}
 	
-	return g;
+	return g / gn;
 }
 
 vec4 hook() {
-	float g = lumGaussian(HOOKED_pos, vec2(0, HOOKED_pt.y));
-    return vec4(0, 0, g, 0);
+    return vec4(comp_gaussian_y(), 0.0, 0.0, 0.0);
 }
 
-
-
-
-//!DESC Anime4K-v3.1-ThinLines-Kernel(X)
-//!HOOK NATIVE
-//!BIND HOOKED
-//!BIND LUMAD
-//!SAVE LUMAD2
+//!DESC Anime4K-v3.2-Thin-(HQ)-Kernel-X
+//!HOOK MAIN
+//!BIND LINESOBEL
+//!SAVE LINESOBEL
 //!COMPONENTS 2
 
 vec4 hook() {
-	vec2 d = HOOKED_pt;
+	float l = LINESOBEL_texOff(vec2(-1.0, 0.0)).x;
+	float c = LINESOBEL_tex(LINESOBEL_pos).x;
+	float r = LINESOBEL_texOff(vec2(1.0, 0.0)).x;
 	
-	//[tl  t tr]
-	//[ l  c  r]
-	//[bl  b br]
-	float l = LUMAD_tex(HOOKED_pos + vec2(-d.x, 0)).z;
-	float c = LUMAD_tex(HOOKED_pos).z;
-	float r = LUMAD_tex(HOOKED_pos + vec2(d.x, 0)).z;
-	
-	
-	//Horizontal Gradient
-	//[-1  0  1]
-	//[-2  0  2]
-	//[-1  0  1]
 	float xgrad = (-l + r);
-	
-	//Vertical Gradient
-	//[-1 -2 -1]
-	//[ 0  0  0]
-	//[ 1  2  1]
 	float ygrad = (l + c + c + r);
 	
-	//Computes the luminance's gradient
-	return vec4(xgrad, ygrad, 0, 0);
+	return vec4(xgrad, ygrad, 0.0, 0.0);
 }
 
 
-//!DESC Anime4K-v3.1-ThinLines-Kernel(Y)
-//!HOOK NATIVE
-//!BIND HOOKED
-//!BIND LUMAD2
-//!SAVE LUMAD2
+//!DESC Anime4K-v3.2-Thin-(HQ)-Kernel-Y
+//!HOOK MAIN
+//!BIND LINESOBEL
+//!SAVE LINESOBEL
 //!COMPONENTS 2
 
 vec4 hook() {
-	vec2 d = HOOKED_pt;
+	float tx = LINESOBEL_texOff(vec2(0.0, -1.0)).x;
+	float cx = LINESOBEL_tex(LINESOBEL_pos).x;
+	float bx = LINESOBEL_texOff(vec2(0.0, 1.0)).x;
 	
-	//[tl  t tr]
-	//[ l cc  r]
-	//[bl  b br]
-	float tx = LUMAD2_tex(HOOKED_pos + vec2(0, -d.y)).x;
-	float cx = LUMAD2_tex(HOOKED_pos).x;
-	float bx = LUMAD2_tex(HOOKED_pos + vec2(0, d.y)).x;
+	float ty = LINESOBEL_texOff(vec2(0.0, -1.0)).y;
+	float by = LINESOBEL_texOff(vec2(0.0, 1.0)).y;
 	
-	
-	float ty = LUMAD2_tex(HOOKED_pos + vec2(0, -d.y)).y;
-	//float cy = LUMAD2_tex(HOOKED_pos).y;
-	float by = LUMAD2_tex(HOOKED_pos + vec2(0, d.y)).y;
-	
-	
-	//Horizontal Gradient
-	//[-1  0  1]
-	//[-2  0  2]
-	//[-1  0  1]
 	float xgrad = (tx + cx + cx + bx) / 8.0;
 	
-	//Vertical Gradient
-	//[-1 -2 -1]
-	//[ 0  0  0]
-	//[ 1  2  1]
 	float ygrad = (-ty + by) / 8.0;
 	
 	//Computes the luminance's gradient
-	return vec4(xgrad, ygrad, 0, 0);
+	return vec4(xgrad, ygrad, 0.0, 0.0);
 }
 
-//!DESC Anime4K-v3.1-ThinLines
-//!HOOK NATIVE
+
+//!DESC Anime4K-v3.2-Thin-(HQ)-Warp
+//!HOOK MAIN
 //!BIND HOOKED
-//!BIND LUMAD
-//!BIND LUMAD2
+//!BIND LINESOBEL
 
 #define STRENGTH 0.6 //Strength of warping for each iteration
 #define ITERATIONS 1 //Number of iterations for the forwards solver, decreasing strength and increasing iterations improves quality at the cost of speed.
-
-#define L_tex HOOKED_tex
 
 vec4 hook() {
 	vec2 d = HOOKED_pt;
@@ -258,7 +212,7 @@ vec4 hook() {
 	
 	vec2 pos = HOOKED_pos;
 	for (int i=0; i<ITERATIONS; i++) {
-		vec2 dn = LUMAD2_tex(pos).xy;
+		vec2 dn = LINESOBEL_tex(pos).xy;
 		vec2 dd = (dn / (length(dn) + 0.01)) * d * relstr; //Quasi-normalization for large vectors, avoids divide by zero
 		pos -= dd;
 	}

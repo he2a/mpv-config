@@ -1,21 +1,25 @@
 local opts = {
+    mode = "hard", -- can be "hard" or "soft". If hard, apply a crop filter, if soft zoom + pan. Or a bonus "delogo" mode
     draw_shade = true,
     shade_opacity = "77",
+    draw_frame = false,
+    frame_border_width = 2,
+    frame_border_color = "EEEEEE",
     draw_crosshair = true,
     draw_text = true,
-    mouse_support=true,
-    coarse_movement=30,
-    left_coarse="LEFT",
-    right_coarse="RIGHT",
-    up_coarse="UP",
-    down_coarse="DOWN",
-    fine_movement=1,
-    left_fine="ALT+LEFT",
-    right_fine="ALT+RIGHT",
-    up_fine="ALT+UP",
-    down_fine="ALT+DOWN",
-    accept="ENTER,MOUSE_BTN0",
-    cancel="ESC",
+    mouse_support = true,
+    coarse_movement = 30,
+    left_coarse = "LEFT",
+    right_coarse = "RIGHT",
+    up_coarse = "UP",
+    down_coarse = "DOWN",
+    fine_movement = 1,
+    left_fine = "ALT+LEFT",
+    right_fine = "ALT+RIGHT",
+    up_fine = "ALT+UP",
+    down_fine = "ALT+DOWN",
+    accept = "ENTER,MOUSE_BTN0",
+    cancel = "ESC",
 }
 (require 'mp.options').read_options(opts)
 
@@ -26,105 +30,30 @@ function split(input)
     end
     return ret
 end
+local msg = require 'mp.msg'
+
 opts.accept = split(opts.accept)
 opts.cancel = split(opts.cancel)
+function mode_ok(mode)
+    return mode == "soft" or mode == "hard" or mode == "delogo"
+end
+if not mode_ok(opts.mode) then
+    msg.error("Invalid mode value: " .. opts.mode)
+    return
+end
 
 local assdraw = require 'mp.assdraw'
-local msg = require 'mp.msg'
+local active = false
+local active_mode = "" -- same possible values as opts.mode
 local needs_drawing = false
-local dimensions_changed = false
-local crop_first_corner = nil -- in video space
+local crop_first_corner = nil -- in normalized video space
 local crop_cursor = {
-    x = -1,
-    y = -1
+    x = 0,
+    y = 0
 }
 
-function get_video_dimensions()
-    if not dimensions_changed then return _video_dimensions end
-    -- this function is very much ripped from video/out/aspect.c in mpv's source
-    local video_params = mp.get_property_native("video-out-params")
-    if not video_params then return nil end
-    dimensions_changed = false
-    local keep_aspect = mp.get_property_bool("keepaspect")
-    local w = video_params["w"]
-    local h = video_params["h"]
-    local dw = video_params["dw"]
-    local dh = video_params["dh"]
-    if mp.get_property_number("video-rotate") % 180 == 90 then
-        w, h = h,w
-        dw, dh = dh, dw
-    end
-    _video_dimensions = {
-        top_left = {},
-        bottom_right = {},
-        ratios = {},
-    }
-    if keep_aspect then
-        local unscaled = mp.get_property_native("video-unscaled")
-        local panscan = mp.get_property_number("panscan")
-        local window_w, window_h = mp.get_osd_size()
-
-        local fwidth = window_w
-        local fheight = math.floor(window_w / dw * dh)
-        if fheight > window_h or fheight < h then
-            local tmpw = math.floor(window_h / dh * dw)
-            if tmpw <= window_w then
-                fheight = window_h
-                fwidth = tmpw
-            end
-        end
-        local vo_panscan_area = window_h - fheight
-        local f_w = fwidth / fheight
-        local f_h = 1
-        if vo_panscan_area == 0 then
-            vo_panscan_area = window_h - fwidth
-            f_w = 1
-            f_h = fheight / fwidth
-        end
-        if unscaled or unscaled == "downscale-big" then
-            vo_panscan_area = 0
-            if unscaled or (dw <= window_w and dh <= window_h) then
-                fwidth = dw
-                fheight = dh
-            end
-        end
-
-        local scaled_width = fwidth + math.floor(vo_panscan_area * panscan * f_w)
-        local scaled_height = fheight + math.floor(vo_panscan_area * panscan * f_h)
-
-        local split_scaling = function (dst_size, scaled_src_size, zoom, align, pan)
-            scaled_src_size = math.floor(scaled_src_size * 2 ^ zoom)
-            align = (align + 1) / 2
-            local dst_start = math.floor((dst_size - scaled_src_size) * align + pan * scaled_src_size)
-            if dst_start < 0 then
-                --account for C int cast truncating as opposed to flooring
-                dst_start = dst_start + 1
-            end
-            local dst_end = dst_start + scaled_src_size;
-            if dst_start >= dst_end then
-                dst_start = 0
-                dst_end = 1
-            end
-            return dst_start, dst_end
-        end
-        local zoom = mp.get_property_number("video-zoom")
-
-        local align_x = mp.get_property_number("video-align-x")
-        local pan_x = mp.get_property_number("video-pan-x")
-        _video_dimensions.top_left.x, _video_dimensions.bottom_right.x = split_scaling(window_w, scaled_width, zoom, align_x, pan_x)
-
-        local align_y = mp.get_property_number("video-align-y")
-        local pan_y = mp.get_property_number("video-pan-y")
-        _video_dimensions.top_left.y, _video_dimensions.bottom_right.y = split_scaling(window_h,  scaled_height, zoom, align_y, pan_y)
-    else
-        _video_dimensions.top_left.x = 0
-        _video_dimensions.bottom_right.x = window_w
-        _video_dimensions.top_left.y = 0
-        _video_dimensions.bottom_right.y = window_h
-    end
-    _video_dimensions.ratios.w = w / (_video_dimensions.bottom_right.x - _video_dimensions.top_left.x)
-    _video_dimensions.ratios.h = h / (_video_dimensions.bottom_right.y - _video_dimensions.top_left.y)
-    return _video_dimensions
+function redraw()
+    needs_drawing = true
 end
 
 function sort_corners(c1, c2)
@@ -151,23 +80,41 @@ function clamp_point(top_left, point, bottom_right)
     }
 end
 
-function screen_to_video(point, video_dim)
+function screen_to_video_norm(point, dim)
     return {
-        x = math.floor(video_dim.ratios.w * (point.x - video_dim.top_left.x) + 0.5),
-        y = math.floor(video_dim.ratios.h * (point.y - video_dim.top_left.y) + 0.5)
+        x = (point.x - dim.ml) / (dim.w - dim.ml - dim.mr),
+        y = (point.y - dim.mt) / (dim.h - dim.mt - dim.mb)
     }
 end
 
-function video_to_screen(point, video_dim)
+function video_norm_to_screen(point, dim)
     return {
-        x = math.floor(point.x / video_dim.ratios.w + video_dim.top_left.x + 0.5),
-        y = math.floor(point.y / video_dim.ratios.h + video_dim.top_left.y + 0.5)
+        x = math.floor(point.x * (dim.w - dim.ml - dim.mr) + dim.ml + 0.5),
+        y = math.floor(point.y * (dim.h - dim.mt - dim.mb) + dim.mt + 0.5)
     }
 end
 
-function draw_shade(ass, unshaded, video)
+function position_to_ensure_ratio(moving, fixed, ratio)
+    -- corners are in screen coordinates
+    local x = moving.x
+    local y = moving.y
+    if math.abs(x - fixed.x) < ratio * math.abs(y - fixed.y) then
+        local is_left = x < fixed.x and -1 or 1
+        x = fixed.x + is_left * math.abs(y - fixed.y) * ratio
+    else
+        local is_up = y < fixed.y and -1 or 1
+        y = fixed.y + is_up * math.abs(x - fixed.x) / ratio
+    end
+    return {
+        x = x,
+        y = y,
+    }
+end
+
+function draw_shade(ass, unshaded, window)
     ass:new_event()
     ass:pos(0, 0)
+    ass:append("{\\an7}")
     ass:append("{\\bord0}")
     ass:append("{\\shad0}")
     ass:append("{\\c&H000000&}")
@@ -176,7 +123,7 @@ function draw_shade(ass, unshaded, video)
     ass:append("{\\3a&HFF}")
     ass:append("{\\4a&HFF}")
     local c1, c2 = unshaded.top_left, unshaded.bottom_right
-    local v = video
+    local v = window
     --          c1.x   c2.x
     --     +-----+------------+
     --     |     |     ur     |
@@ -195,8 +142,31 @@ function draw_shade(ass, unshaded, video)
     -- and \iclip it in the middle, but seemingy slower
 end
 
+function draw_frame(ass, frame)
+    ass:new_event()
+    ass:pos(0, 0)
+    ass:append("{\\an7}")
+    ass:append("{\\bord0}")
+    ass:append("{\\shad0}")
+    ass:append("{\\c&H" .. opts.frame_border_color .. "&}")
+    ass:append("{\\1a&H00&}")
+    ass:append("{\\2a&HFF&}")
+    ass:append("{\\3a&HFF&}")
+    ass:append("{\\4a&HFF&}")
+    local c1, c2 = frame.top_left, frame.bottom_right
+    local b = opts.frame_border_width
+    ass:draw_start()
+    ass:rect_cw(c1.x, c1.y - b, c2.x + b, c1.y)
+    ass:rect_cw(c2.x, c1.y, c2.x + b, c2.y + b)
+    ass:rect_cw(c1.x - b, c2.y, c2.x, c2.y + b)
+    ass:rect_cw(c1.x - b, c1.y - b, c1.x, c2.y)
+    ass:draw_stop()
+end
+
 function draw_crosshair(ass, center, window_size)
     ass:new_event()
+    ass:pos(0, 0)
+    ass:append("{\\an7}")
     ass:append("{\\bord0}")
     ass:append("{\\shad0}")
     ass:append("{\\c&HBBBBBB&}")
@@ -204,7 +174,6 @@ function draw_crosshair(ass, center, window_size)
     ass:append("{\\2a&HFF&}")
     ass:append("{\\3a&HFF&}")
     ass:append("{\\4a&HFF&}")
-    ass:pos(0, 0)
     ass:draw_start()
     ass:rect_cw(center.x - 0.5, 0, center.x + 0.5, window_size.h)
     ass:rect_cw(0, center.y - 0.5, window_size.w, center.y + 0.5)
@@ -233,79 +202,122 @@ end
 
 function draw_crop_zone()
     if needs_drawing then
-        local video_dim = get_video_dimensions()
-        if not video_dim then
+        local dim = mp.get_property_native("osd-dimensions")
+        if not dim then
             cancel_crop()
             return
         end
 
-        local window_size = {}
-        window_size.w, window_size.h = mp.get_osd_size()
-        crop_cursor = clamp_point(video_dim.top_left, crop_cursor, video_dim.bottom_right)
+        local cursor = {
+            x = crop_cursor.x,
+            y = crop_cursor.y,
+        }
+        if active_mode == "soft" then
+            if crop_first_corner then
+                cursor = position_to_ensure_ratio(cursor, video_norm_to_screen(crop_first_corner, dim), dim.w / dim.h)
+            end
+        elseif active_mode == "hard" or active_mode == "delogo" then
+            cursor = clamp_point({ x = dim.ml, y = dim.mt }, cursor, { x = dim.w - dim.mr, y = dim.h - dim.mb })
+        end
         local ass = assdraw.ass_new()
 
-        if opts.draw_shade and crop_first_corner then
-            local first_corner = video_to_screen(crop_first_corner, video_dim)
-            local unshaded = {}
-            unshaded.top_left, unshaded.bottom_right = sort_corners(first_corner, crop_cursor)
+        if crop_first_corner and (opts.draw_shade or opts.draw_frame) then
+            local first_corner = video_norm_to_screen(crop_first_corner, dim)
+            local frame = {}
+            frame.top_left, frame.bottom_right = sort_corners(first_corner, cursor)
             -- don't draw shade over non-visible video parts
-            local window = {
-                top_left = { x = 0, y = 0 },
-                bottom_right = { x = window_size.w, y = window_size.h },
-            }
-            local video_visible = {
-                top_left = clamp_point(window.top_left, video_dim.top_left, window.bottom_right),
-                bottom_right = clamp_point(window.top_left, video_dim.bottom_right, window.bottom_right),
-            }
-            draw_shade(ass, unshaded, video_visible)
+            if opts.draw_shade then
+                local window = {
+                    top_left = { x = 0, y = 0 },
+                    bottom_right = { x = dim.w, y = dim.h },
+                }
+                draw_shade(ass, frame, window)
+            end
+            if opts.draw_frame then
+                draw_frame(ass, frame)
+            end
         end
 
+
         if opts.draw_crosshair then
-            draw_crosshair(ass, crop_cursor, window_size)
+            draw_crosshair(ass, cursor, { w = dim.w, h = dim.h })
         end
 
         if opts.draw_text then
-            cursor_video = screen_to_video(crop_cursor, video_dim)
-            local text = string.format("%d, %d", cursor_video.x, cursor_video.y)
-            if crop_first_corner then
-                text = string.format("%s (%dx%d)", text,
-                    math.abs(cursor_video.x - crop_first_corner.x),
-                    math.abs(cursor_video.y - crop_first_corner.y)
-                )
+            local vop = mp.get_property_native("video-out-params")
+            if vop then
+                local cursor_norm = screen_to_video_norm(cursor, dim)
+                local text = string.format("%d, %d", cursor_norm.x * vop.w, cursor_norm.y * vop.h)
+                if crop_first_corner then
+                    text = string.format("%s (%dx%d)", text,
+                        math.abs((cursor_norm.x - crop_first_corner.x) * vop.w ),
+                        math.abs((cursor_norm.y - crop_first_corner.y) * vop.h )
+                    )
+                end
+                draw_position_text(ass, text, cursor, { w = dim.w, h = dim.h }, 6)
             end
-            draw_position_text(ass, text, crop_cursor, window_size, 6)
         end
 
-        mp.set_osd_ass(window_size.w, window_size.h, ass.text)
+        mp.set_osd_ass(dim.w, dim.h, ass.text)
         needs_drawing = false
     end
 end
 
-function crop_video(x, y, w, h)
-    local vf_table = mp.get_property_native("vf")
-    vf_table[#vf_table + 1] = {
-        name="crop",
-        params= {
-            x = tostring(x),
-            y = tostring(y),
-            w = tostring(w),
-            h = tostring(h)
+function crop_video(x, y, w, h, dim)
+    if active_mode == "soft" then
+        local dim = mp.get_property_native("osd-dimensions")
+        if not dim then return end
+
+        local zoom = mp.get_property_number("video-zoom")
+        local newZoom2 = math.log(dim.w * (2 ^ zoom) / (dim.w - dim.ml - dim.mr) / w) / math.log(2)
+        local newZoom1 = math.log(dim.h * (2 ^ zoom) / (dim.h - dim.mt - dim.mb) / h) / math.log(2)
+        mp.set_property("video-zoom", (newZoom1 + newZoom2) / 2) -- they should be ~ the same, but let's not play favorites
+        mp.set_property("video-pan-x", 0.5 - (x + w / 2))
+        mp.set_property("video-pan-y", 0.5 - (y + h / 2))
+    elseif active_mode == "hard" or active_mode == "delogo" then
+        local vop = mp.get_property_native("video-out-params")
+        local vf_table = mp.get_property_native("vf")
+        local x = math.floor(x * vop.w)
+        local y = math.floor(y * vop.h)
+        local w = math.floor(w * vop.w)
+        local h = math.floor(h * vop.h)
+        if active_mode == "delogo" then
+            -- delogo is a little special and needs some padding to function
+            w = math.min(vop.w - 1, w)
+            h = math.min(vop.h - 1, h)
+            x = math.max(1, x)
+            y = math.max(1, y)
+            if x + w == vop.w then w = w - 1 end
+            if y + h == vop.h then h = h - 1 end
+        end
+        vf_table[#vf_table + 1] = {
+            name=(active_mode == "hard") and "crop" or "delogo",
+            params= { x = tostring(x), y = tostring(y), w = tostring(w), h = tostring(h) }
         }
-    }
-    mp.set_property_native("vf", vf_table)
+        mp.set_property_native("vf", vf_table)
+    end
 end
 
 function update_crop_zone_state()
-    local dim = get_video_dimensions()
+    local dim = mp.get_property_native("osd-dimensions")
     if not dim then
         cancel_crop()
         return
     end
-    crop_cursor = clamp_point(dim.top_left, crop_cursor, dim.bottom_right)
-    corner_video = screen_to_video(crop_cursor, dim)
+    local corner
+    if active_mode == "soft" then
+        if crop_first_corner then
+            corner = position_to_ensure_ratio(crop_cursor, video_norm_to_screen(crop_first_corner, dim), dim.w / dim.h)
+        else
+            corner = crop_cursor
+        end
+    elseif active_mode == "hard" or active_mode == "delogo" then
+        corner = clamp_point({ x = dim.ml, y = dim.mt }, crop_cursor, { x = dim.w - dim.mr, y = dim.h - dim.mb })
+    end
+    local corner_video = screen_to_video_norm(corner, dim)
     if crop_first_corner == nil then
         crop_first_corner = corner_video
-        needs_drawing = true
+        redraw()
     else
         local c1, c2 = sort_corners(crop_first_corner, corner_video)
         crop_video(c1.x, c1.y, c2.x - c1.x, c2.y - c1.y)
@@ -313,16 +325,10 @@ function update_crop_zone_state()
     end
 end
 
-function reset_crop()
-    dimensions_changed = true
-    needs_drawing = true
-end
-
 local bindings = {}
 local bindings_repeat = {}
 
 function cancel_crop()
-    needs_drawing = false
     crop_first_corner = nil
     for key, _ in pairs(bindings) do
         mp.remove_key_binding("crop-"..key)
@@ -330,14 +336,76 @@ function cancel_crop()
     for key, _ in pairs(bindings_repeat) do
         mp.remove_key_binding("crop-"..key)
     end
-    mp.unobserve_property(reset_crop)
+    mp.unobserve_property(redraw)
     mp.unregister_idle(draw_crop_zone)
     mp.set_osd_ass(1280, 720, '')
+    active = false
+end
+
+function start_crop(mode)
+    if active then return end
+    if not mp.get_property_native("osd-dimensions") then return end
+    if mode and not mode_ok(mode) then
+        msg.error("Invalid mode value: " .. mode)
+        return
+    end
+    local mode_maybe = mode or opts.mode
+    if mode_maybe ~= 'soft' then
+        local hwdec = mp.get_property("hwdec-current")
+        if hwdec and hwdec ~= "no" and not string.find(hwdec, "-copy$") then
+            msg.error("Cannot crop with hardware decoding active (see manual)")
+            return
+        end
+    end
+    active = true
+    active_mode = mode_maybe
+
+    if opts.mouse_support then
+        crop_cursor.x, crop_cursor.y = mp.get_mouse_pos()
+    end
+    redraw()
+    for key, func in pairs(bindings) do
+        mp.add_forced_key_binding(key, "crop-"..key, func)
+    end
+    for key, func in pairs(bindings_repeat) do
+        mp.add_forced_key_binding(key, "crop-"..key, func, { repeatable = true })
+    end
+    mp.register_idle(draw_crop_zone)
+    mp.observe_property("osd-dimensions", nil, redraw)
+end
+
+function toggle_crop(mode)
+    if mode and not mode_ok(mode) then
+        msg.error("Invalid mode value: " .. mode)
+    end
+    local toggle_mode = mode or opts.mode
+    if toggle_mode == "soft" then return end -- can't toggle soft mode
+
+    local remove_filter = function()
+        local to_remove = (toggle_mode == "hard") and "crop" or "delogo"
+        local vf_table = mp.get_property_native("vf")
+        if #vf_table > 0 then
+            for i = #vf_table, 1, -1 do
+                if vf_table[i].name == to_remove then
+                    for j = i, #vf_table-1 do
+                        vf_table[j] = vf_table[j+1]
+                    end
+                    vf_table[#vf_table] = nil
+                    mp.set_property_native("vf", vf_table)
+                    return true
+                end
+            end
+        end
+        return false
+    end
+    if not remove_filter() then
+        start_crop(mode)
+    end
 end
 
 -- bindings
 if opts.mouse_support then
-    bindings["MOUSE_MOVE"] = function() crop_cursor.x, crop_cursor.y = mp.get_mouse_pos(); needs_drawing = true end
+    bindings["MOUSE_MOVE"] = function() crop_cursor.x, crop_cursor.y = mp.get_mouse_pos(); redraw() end
 end
 for _, key in ipairs(opts.accept) do
     bindings[key] = update_crop_zone_state
@@ -349,7 +417,7 @@ function movement_func(move_x, move_y)
     return function()
         crop_cursor.x = crop_cursor.x + move_x
         crop_cursor.y = crop_cursor.y + move_y
-        needs_drawing = true
+        redraw()
     end
 end
 bindings_repeat[opts.left_coarse]  = movement_func(-opts.coarse_movement, 0)
@@ -361,59 +429,6 @@ bindings_repeat[opts.right_fine]   = movement_func(opts.fine_movement, 0)
 bindings_repeat[opts.up_fine]      = movement_func(0, -opts.fine_movement)
 bindings_repeat[opts.down_fine]    = movement_func(0, opts.fine_movement)
 
-local properties = {
-    "keepaspect",
-    "video-out-params",
-    "video-unscaled",
-    "panscan",
-    "video-zoom",
-    "video-align-x",
-    "video-pan-x",
-    "video-align-y",
-    "video-pan-y",
-    "osd-width",
-    "osd-height",
-}
-
-function start_crop()
-    if not mp.get_property("video-out-params", nil) then return end
-    local hwdec = mp.get_property("hwdec-current")
-    if hwdec and hwdec ~= "no" and not string.find(hwdec, "-copy$") then
-        msg.error("Cannot crop with hardware decoding active (see manual)")
-        return
-    end
-
-    crop_cursor.x, crop_cursor.y = mp.get_mouse_pos()
-    needs_drawing = true
-    dimensions_changed = true
-    for key, func in pairs(bindings) do
-        mp.add_forced_key_binding(key, "crop-"..key, func)
-    end
-    for key, func in pairs(bindings_repeat) do
-        mp.add_forced_key_binding(key, "crop-"..key, func, { repeatable = true })
-    end
-    mp.register_idle(draw_crop_zone)
-    for _, p in ipairs(properties) do
-        mp.observe_property(p, "native", reset_crop)
-    end
-end
-
-function toggle_crop()
-    local vf_table = mp.get_property_native("vf")
-    if #vf_table > 0 then
-        for i = #vf_table, 1, -1 do
-            if vf_table[i].name == "crop" then
-                for j = i, #vf_table-1 do
-                    vf_table[j] = vf_table[j+1]
-                end
-                vf_table[#vf_table] = nil
-                mp.set_property_native("vf", vf_table)
-                return
-            end
-        end
-    end
-    start_crop()
-end
 
 mp.add_key_binding(nil, "start-crop", start_crop)
-mp.add_key_binding("C", "toggle-crop", toggle_crop)
+mp.add_key_binding(nil, "toggle-crop", toggle_crop)

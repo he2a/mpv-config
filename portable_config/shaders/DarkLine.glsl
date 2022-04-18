@@ -1,8 +1,6 @@
-//Anime4K v3.1 GLSL
-
 // MIT License
 
-// Copyright (c) 2019-2020 bloc97
+// Copyright (c) 2019-2021 bloc97
 // All rights reserved.
 
 // Permission is hereby granted, free of charge, to any person obtaining a copy
@@ -23,165 +21,178 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 // SOFTWARE.
 
-//!DESC Anime4K-v3.1-DarkLines-Kernel(X)
-//!HOOK NATIVE
+//!DESC Anime4K-v3.2-Darken-DoG-(HQ)-Luma
+//!HOOK MAIN
 //!BIND HOOKED
-//!SAVE MMKERNEL
+//!SAVE LINELUMA
 //!COMPONENTS 1
 
-#define L_tex HOOKED_tex
-
-#define SIGMA 1.0
-
-float gaussian(float x, float s, float m) {
-	return (1.0 / (s * sqrt(2.0 * 3.14159))) * exp(-0.5 * pow(abs(x - m) / s, 2.0));
+float get_luma(vec4 rgba) {
+	return dot(vec4(0.299, 0.587, 0.114, 0.0), rgba);
 }
 
-float lumGaussian(vec2 pos, vec2 d) {
-	float s = SIGMA * HOOKED_size.y / 1080.0;
-	float kernel_size = s * 2.0 + 1.0;
+vec4 hook() {
+    return vec4(get_luma(HOOKED_tex(HOOKED_pos)), 0.0, 0.0, 0.0);
+}
+
+//!DESC Anime4K-v3.2-Darken-DoG-(HQ)-Difference-X
+//!HOOK MAIN
+//!BIND HOOKED
+//!BIND LINELUMA
+//!SAVE LINEKERNEL
+//!COMPONENTS 1
+
+#define SPATIAL_SIGMA (1.0 * float(HOOKED_size.y) / 1080.0) //Spatial window size, must be a positive real number.
+
+#define KERNELSIZE (max(int(ceil(SPATIAL_SIGMA * 2.0)), 1) * 2 + 1) //Kernel size, must be an positive odd integer.
+#define KERNELHALFSIZE (int(KERNELSIZE/2)) //Half of the kernel size without remainder. Must be equal to trunc(KERNELSIZE/2).
+#define KERNELLEN (KERNELSIZE * KERNELSIZE) //Total area of kernel. Must be equal to KERNELSIZE * KERNELSIZE.
+
+float gaussian(float x, float s, float m) {
+	float scaled = (x - m) / s;
+	return exp(-0.5 * scaled * scaled);
+}
+
+float comp_gaussian_x() {
+
+	float g = 0.0;
+	float gn = 0.0;
 	
-	float g = (L_tex(pos).x) * gaussian(0.0, s, 0.0);
-	float gn = gaussian(0.0, s, 0.0);
-	
-	g += (L_tex(pos - d).x + L_tex(pos + d).x) * gaussian(1.0, s, 0.0);
-	gn += gaussian(1.0, s, 0.0) * 2.0;
-	
-	for (int i=2; float(i)<kernel_size; i++) {
-		g += (L_tex(pos - (d * float(i))).x + L_tex(pos + (d * float(i))).x) * gaussian(float(i), s, 0.0);
-		gn += gaussian(float(i), s, 0.0) * 2.0;
+	for (int i=0; i<KERNELSIZE; i++) {
+		float di = float(i - KERNELHALFSIZE);
+		float gf = gaussian(di, SPATIAL_SIGMA, 0.0);
+		
+		g = g + LINELUMA_texOff(vec2(di, 0.0)).x * gf;
+		gn = gn + gf;
+		
 	}
 	
 	return g / gn;
 }
 
 vec4 hook() {
-    return vec4(lumGaussian(HOOKED_pos, vec2(HOOKED_pt.x, 0)));
+    return vec4(comp_gaussian_x(), 0.0, 0.0, 0.0);
 }
 
-//!DESC Anime4K-v3.1-DarkLines-Kernel(Y)
-//!HOOK NATIVE
+//!DESC Anime4K-v3.2-Darken-DoG-(HQ)-Difference-Y
+//!HOOK MAIN
 //!BIND HOOKED
-//!BIND MMKERNEL
-//!SAVE MMKERNEL
+//!BIND LINELUMA
+//!BIND LINEKERNEL
+//!SAVE LINEKERNEL
 //!COMPONENTS 1
 
-#define L_tex MMKERNEL_tex
+#define SPATIAL_SIGMA (1.0 * float(HOOKED_size.y) / 1080.0) //Spatial window size, must be a positive real number.
 
-#define SIGMA 1.0
+#define KERNELSIZE (max(int(ceil(SPATIAL_SIGMA * 2.0)), 1) * 2 + 1) //Kernel size, must be an positive odd integer.
+#define KERNELHALFSIZE (int(KERNELSIZE/2)) //Half of the kernel size without remainder. Must be equal to trunc(KERNELSIZE/2).
+#define KERNELLEN (KERNELSIZE * KERNELSIZE) //Total area of kernel. Must be equal to KERNELSIZE * KERNELSIZE.
 
 float gaussian(float x, float s, float m) {
-	return (1.0 / (s * sqrt(2.0 * 3.14159))) * exp(-0.5 * pow(abs(x - m) / s, 2.0));
+	float scaled = (x - m) / s;
+	return exp(-0.5 * scaled * scaled);
 }
 
-float lumGaussian(vec2 pos, vec2 d) {
-	float s = SIGMA * HOOKED_size.y / 1080.0;
-	float kernel_size = s * 2.0 + 1.0;
+float comp_gaussian_y() {
+
+	float g = 0.0;
+	float gn = 0.0;
 	
-	float g = (L_tex(pos).x) * gaussian(0.0, s, 0.0);
-	float gn = gaussian(0.0, s, 0.0);
-	
-	g += (L_tex(pos - d).x + L_tex(pos + d).x) * gaussian(1.0, s, 0.0);
-	gn += gaussian(1.0, s, 0.0) * 2.0;
-	
-	for (int i=2; float(i)<kernel_size; i++) {
-		g += (L_tex(pos - (d * float(i))).x + L_tex(pos + (d * float(i))).x) * gaussian(float(i), s, 0.0);
-		gn += gaussian(float(i), s, 0.0) * 2.0;
+	for (int i=0; i<KERNELSIZE; i++) {
+		float di = float(i - KERNELHALFSIZE);
+		float gf = gaussian(di, SPATIAL_SIGMA, 0.0);
+		
+		g = g + LINEKERNEL_texOff(vec2(0.0, di)).x * gf;
+		gn = gn + gf;
+		
 	}
 	
 	return g / gn;
 }
 
 vec4 hook() {
-    return vec4(min(HOOKED_tex(HOOKED_pos).x - lumGaussian(HOOKED_pos, vec2(0, HOOKED_pt.y)), 0.0));
+    return vec4(min(LINELUMA_tex(HOOKED_pos).x - comp_gaussian_y(), 0.0), 0.0, 0.0, 0.0);
 }
 
-//!DESC Anime4K-v3.1-DarkLines-Kernel(X)
-//!HOOK NATIVE
+//!DESC Anime4K-v3.2-Darken-DoG-(HQ)-Gaussian-X
+//!HOOK MAIN
 //!BIND HOOKED
-//!BIND MMKERNEL
-//!SAVE MMKERNEL
+//!BIND LINEKERNEL
+//!SAVE LINEKERNEL
 //!COMPONENTS 1
 
-#define L_tex MMKERNEL_tex
+#define SPATIAL_SIGMA (1.0 * float(HOOKED_size.y) / 1080.0) //Spatial window size, must be a positive real number.
 
-#define SIGMA 1.0
+#define KERNELSIZE (max(int(ceil(SPATIAL_SIGMA * 2.0)), 1) * 2 + 1) //Kernel size, must be an positive odd integer.
+#define KERNELHALFSIZE (int(KERNELSIZE/2)) //Half of the kernel size without remainder. Must be equal to trunc(KERNELSIZE/2).
+#define KERNELLEN (KERNELSIZE * KERNELSIZE) //Total area of kernel. Must be equal to KERNELSIZE * KERNELSIZE.
 
 float gaussian(float x, float s, float m) {
-	return (1.0 / (s * sqrt(2.0 * 3.14159))) * exp(-0.5 * pow(abs(x - m) / s, 2.0));
+	float scaled = (x - m) / s;
+	return exp(-0.5 * scaled * scaled);
 }
 
-float lumGaussian(vec2 pos, vec2 d) {
-	float s = SIGMA * HOOKED_size.y / 1080.0;
-	float kernel_size = s * 2.0 + 1.0;
+float comp_gaussian_x() {
+
+	float g = 0.0;
+	float gn = 0.0;
 	
-	float g = (L_tex(pos).x) * gaussian(0.0, s, 0.0);
-	float gn = gaussian(0.0, s, 0.0);
-	
-	g += (L_tex(pos - d).x + L_tex(pos + d).x) * gaussian(1.0, s, 0.0);
-	gn += gaussian(1.0, s, 0.0) * 2.0;
-	
-	for (int i=2; float(i)<kernel_size; i++) {
-		g += (L_tex(pos - (d * float(i))).x + L_tex(pos + (d * float(i))).x) * gaussian(float(i), s, 0.0);
-		gn += gaussian(float(i), s, 0.0) * 2.0;
+	for (int i=0; i<KERNELSIZE; i++) {
+		float di = float(i - KERNELHALFSIZE);
+		float gf = gaussian(di, SPATIAL_SIGMA, 0.0);
+		
+		g = g + LINEKERNEL_texOff(vec2(di, 0.0)).x * gf;
+		gn = gn + gf;
+		
 	}
 	
 	return g / gn;
 }
 
 vec4 hook() {
-    return vec4(lumGaussian(HOOKED_pos, vec2(HOOKED_pt.x, 0)));
+    return vec4(comp_gaussian_x(), 0.0, 0.0, 0.0);
 }
 
-//!DESC Anime4K-v3.1-DarkLines-Kernel(Y)
-//!HOOK NATIVE
+//!DESC Anime4K-v3.2-Darken-DoG-(HQ)-Gaussian-Y
+//!HOOK MAIN
 //!BIND HOOKED
-//!BIND MMKERNEL
-//!SAVE MMKERNEL
-//!COMPONENTS 1
+//!BIND LINEKERNEL
 
-#define L_tex MMKERNEL_tex
+#define SPATIAL_SIGMA (1.0 * float(HOOKED_size.y) / 1080.0) //Spatial window size, must be a positive real number.
 
-#define SIGMA 1.0
+#define KERNELSIZE (max(int(ceil(SPATIAL_SIGMA * 2.0)), 1) * 2 + 1) //Kernel size, must be an positive odd integer.
+#define KERNELHALFSIZE (int(KERNELSIZE/2)) //Half of the kernel size without remainder. Must be equal to trunc(KERNELSIZE/2).
+#define KERNELLEN (KERNELSIZE * KERNELSIZE) //Total area of kernel. Must be equal to KERNELSIZE * KERNELSIZE.
 
 float gaussian(float x, float s, float m) {
-	return (1.0 / (s * sqrt(2.0 * 3.14159))) * exp(-0.5 * pow(abs(x - m) / s, 2.0));
+	float scaled = (x - m) / s;
+	return exp(-0.5 * scaled * scaled);
 }
 
-float lumGaussian(vec2 pos, vec2 d) {
-	float s = SIGMA * HOOKED_size.y / 1080.0;
-	float kernel_size = s * 2.0 + 1.0;
+float comp_gaussian_y() {
+
+	float g = 0.0;
+	float gn = 0.0;
 	
-	float g = (L_tex(pos).x) * gaussian(0.0, s, 0.0);
-	float gn = gaussian(0.0, s, 0.0);
-	
-	g += (L_tex(pos - d).x + L_tex(pos + d).x) * gaussian(1.0, s, 0.0);
-	gn += gaussian(1.0, s, 0.0) * 2.0;
-	
-	for (int i=2; float(i)<kernel_size; i++) {
-		g += (L_tex(pos - (d * float(i))).x + L_tex(pos + (d * float(i))).x) * gaussian(float(i), s, 0.0);
-		gn += gaussian(float(i), s, 0.0) * 2.0;
+	for (int i=0; i<KERNELSIZE; i++) {
+		float di = float(i - KERNELHALFSIZE);
+		float gf = gaussian(di, SPATIAL_SIGMA, 0.0);
+		
+		g = g + LINEKERNEL_texOff(vec2(0.0, di)).x * gf;
+		gn = gn + gf;
+		
 	}
 	
 	return g / gn;
 }
 
-vec4 hook() {
-    return vec4(lumGaussian(HOOKED_pos, vec2(0, HOOKED_pt.y)));
-}
 
-//!DESC Anime4K-v3.1-DarkLines
-//!HOOK NATIVE
-//!BIND HOOKED
-//!BIND MMKERNEL
 
 #define STRENGTH 1.5 //Line darken proportional strength, higher is darker.
-#define L_tex HOOKED_tex
 
 vec4 hook() {
-	float c = (MMKERNEL_tex(HOOKED_pos).x) * STRENGTH;
-	return vec4(clamp(c + L_tex(HOOKED_pos).x, 0.0, L_tex(HOOKED_pos).x), HOOKED_tex(HOOKED_pos).yz, 0);
+	//This trick is only possible if the inverse Y->RGB matrix has 1 for every row... (which is the case for BT.709)
+	//Otherwise we would need to convert RGB to YUV, modify Y then convert back to RGB.
+    return HOOKED_tex(HOOKED_pos) + (comp_gaussian_y() * STRENGTH);
 }
-
-
 

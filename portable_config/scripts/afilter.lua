@@ -43,7 +43,7 @@ drc
 	makeup   : Amount in dB the signal will be amplified after processing.
 	knee     : Curve knee around threshold to enter reduction more softly. 
   threshold: Triggered if signal in dB rises above this level.
-	 
+
 dynaudnorm : Toggleable dynamic audio normalizer based on ffmpeg dynaudnorm filter which adds 
 a certain amount of gain to the input audio in order to bring its peak magnitude to a target 
 level without applying "dynamic range compressing". It will retain 100% of the dynamic range 
@@ -90,13 +90,41 @@ whitelist_dnm = Set whitelist for normalizer
 preamp = -1.0
 
 bands = {
-  {freq = 2300,  width = {'q', 4.0}, gain = 1.0  },
-  {freq = 3000,  width = {'q', 4.0}, gain = -1.0 },
-  {freq = 4390,  width = {'q', 7.0}, gain = 1.0  },
-  {freq = 5840,  width = {'q', 4.0}, gain = -8.2 },
-  {freq = 7300,  width = {'q', 7.0}, gain = 2.5  },
-  {freq = 8220,  width = {'q', 5.0}, gain = -11.0},
-  {freq = 10420, width = {'q', 2.0}, gain = 1.3  }
+  {freq =  2300, width = {'q', 4.0}, gain =  1.00},
+  {freq =  3000, width = {'q', 4.0}, gain = -1.00},
+  {freq =  4390, width = {'q', 7.0}, gain =  1.00},
+  {freq =  5840, width = {'q', 4.0}, gain = -8.20},
+  {freq =  7300, width = {'q', 7.0}, gain =  2.50},
+  {freq =  8220, width = {'q', 5.0}, gain = -11.0},
+  {freq = 10420, width = {'q', 2.0}, gain =  1.30}
+}
+
+-- Equalizer settings for Blon BL-03
+preamp = -1.0
+
+bands = {
+  {freq =  262, width = {'q', 0.757}, gain = -2.11},
+  {freq =  912, width = {'q', 1.000}, gain =  2.29},
+  {freq = 1949, width = {'q', 2.506}, gain = -2.81},
+  {freq = 2691, width = {'q', 3.555}, gain = -5.00},
+  {freq = 3538, width = {'q', 2.258}, gain =  6.91},
+  {freq = 5046, width = {'q', 4.565}, gain = -2.85},
+  {freq = 6213, width = {'q', 13.90}, gain =  2.61},
+  {freq = 7738, width = {'q', 9.222}, gain = -3.67},
+  {freq = 9455, width = {'q', 5.395}, gain =  2.45}
+}
+
+-- Equalizer settings for Sennheiser HD 598SE
+preamp = -3.1
+
+bands = {
+  {freq = 10,    width = {'q', 0.1}, gain =  3.0},
+  {freq = 220,   width = {'q', 0.7}, gain = -2.0},
+  {freq = 400,   width = {'q', 1.0}, gain = -0.5},
+  {freq = 1800,  width = {'q', 2.0}, gain =  1.8},
+  {freq = 3600,  width = {'q', 0.4}, gain =  3.0},
+  {freq = 9950,  width = {'q', 4.5}, gain = -3.0},
+  {freq = 20000, width = {'q', 0.2}, gain =  8.5}
 }
 
 drc = {
@@ -128,15 +156,18 @@ whitelist_dnm = 'movie'
 
 -- User Settings -------------------------------------------------------------------------------------------------------------------------------------
 
-preamp = 0
+preamp = -1.0
 
 bands = {
-  {freq = 64, width = {'o', 3.3}, gain = 0},   -- 20Hz - 200Hz
-  {freq = 400, width = {'o', 2.0}, gain = 0},  -- 200Hz - 800Hz
-  {freq = 1250, width = {'o', 1.3}, gain = 0}, -- 800Hz - 2kHz
-  {freq = 2830, width = {'o', 1.0}, gain = 0}, -- 2kHz - 4kHz
-  {freq = 5600, width = {'o', 1.0}, gain = 0}, -- 4kHz - 8kHz
-  {freq = 12500, width = {'o', 1.3}, gain = 0} -- 8kHz - 20kHz
+  {freq =  262, width = {'q', 0.757}, gain = -2.11},
+  {freq =  912, width = {'q', 1.000}, gain =  2.29},
+  {freq = 1949, width = {'q', 2.506}, gain = -2.81},
+  {freq = 2691, width = {'q', 3.555}, gain = -5.00},
+  {freq = 3538, width = {'q', 2.258}, gain =  6.91},
+  {freq = 5046, width = {'q', 4.565}, gain = -2.85},
+  {freq = 6213, width = {'q', 13.90}, gain =  2.61},
+  {freq = 7738, width = {'q', 9.222}, gain = -3.67},
+  {freq = 9455, width = {'q', 5.395}, gain =  2.45}
 }
 
 drc = {
@@ -157,10 +188,10 @@ dnm = {
 }
 
 eqr_enabled = true
-whitelist_eqr = 'audio'
+whitelist_eqr = 'blank'
 
 drc_enabled = false
-whitelist_drc = 'blank'
+whitelist_drc = 'audio'
 
 dnm_enabled = true
 whitelist_dnm = 'movie'
@@ -171,7 +202,7 @@ local med_type = nil
 local eqr_toggle = false
 local vid_length = 600
 local vid_aratio = 1.2
-local auto_delay = 0.1
+local auto_delay = 0.5
 local eqr_whlist = whitelist_eqr
 local drc_whlist = whitelist_drc
 local dnm_whlist = whitelist_dnm
