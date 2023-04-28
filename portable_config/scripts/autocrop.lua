@@ -56,6 +56,9 @@ detect_min_ratio: number[0.0-1.0] - The ratio of the minimum clip
 detect_seconds: seconds - How long to gather cropdetect data.
     Increasing this may be desirable to allow cropdetect more
     time to collect data.
+
+suppress_osd: bool - Whether the OSD shouldn't be used when filters
+    are applied and removed.
 --]]
 
 require "mp.msg"
@@ -67,7 +70,8 @@ local options = {
     detect_limit = "24/255",
     detect_round = 2,
     detect_min_ratio = 0.5,
-    detect_seconds = 1
+    detect_seconds = 1,
+    suppress_osd = false,
 }
 read_options(options)
 
@@ -81,6 +85,8 @@ timers = {
     auto_delay = nil,
     detect_crop = nil
 }
+
+local command_prefix = options.suppress_osd and 'no-osd' or ''
 
 function is_filter_present(label)
     local filters = mp.get_property_native("vf")
@@ -101,18 +107,23 @@ function is_enough_time(seconds)
     return playtime_remaining and time_needed < playtime_remaining
 end
 
-function is_cropable()
-    local vid = mp.get_property_native("vid")
-    local is_album = vid and mp.get_property_native(
-        string.format("track-list/%d/albumart", vid)
-    ) or false
+function is_cropable(time_needed)
+    if mp.get_property_native('current-tracks/video/image') ~= false then
+        mp.msg.warn("autocrop only works for videos.")
+        return false
+    end
 
-    return vid and not is_album
+    if not is_enough_time(time_needed) then
+        mp.msg.warn("Not enough time to detect crop.")
+        return false
+    end
+
+    return true
 end
 
 function remove_filter(label)
     if is_filter_present(label) then
-        mp.command(string.format('vf remove @%s', label))
+        mp.command(string.format('%s vf remove @%s', command_prefix, label))
         return true
     end
     return false
@@ -135,18 +146,9 @@ function cleanup()
 end
 
 function detect_crop()
-
-    -- If it's not cropable, exit.
-    if not is_cropable() then
-        mp.msg.warn("autocrop only works for videos.")
-        return
-    end
-
-    -- Verify if there is enough time to detect crop.
     local time_needed = options.detect_seconds
 
-    if not is_enough_time(time_needed) then
-        mp.msg.warn("Not enough time to detect crop.")
+    if not is_cropable(time_needed) then
         return
     end
 
@@ -156,8 +158,8 @@ function detect_crop()
 
     mp.command(
         string.format(
-            'vf pre @%s:cropdetect=limit=%s:round=%d:reset=0',
-            labels.cropdetect, limit, round
+            '%s vf pre @%s:cropdetect=limit=%s:round=%d:reset=0',
+            command_prefix, labels.cropdetect, limit, round
         )
     )
 
@@ -248,8 +250,8 @@ function apply_crop(meta)
 
     -- Apply crop.
     mp.command(
-        string.format("vf pre @%s:lavfi-crop=w=%s:h=%s:x=%s:y=%s",
-            labels.crop, meta.w, meta.h, meta.x, meta.y
+        string.format("%s vf pre @%s:lavfi-crop=w=%s:h=%s:x=%s:y=%s",
+            command_prefix, labels.crop, meta.w, meta.h, meta.x, meta.y
         )
     )
 end
@@ -275,8 +277,7 @@ function on_start()
         -- Verify if there is enough time for autocrop.
         local time_needed = options.auto_delay + options.detect_seconds
 
-        if not is_enough_time(time_needed) then
-            mp.msg.warn("Not enough time for autocrop.")
+        if not is_cropable(time_needed) then
             return
         end
 
@@ -317,6 +318,6 @@ function on_toggle()
     detect_crop()
 end
 
-mp.add_key_binding("c", "toggle_crop", on_toggle)
+mp.add_key_binding("C", "toggle_crop", on_toggle)
 mp.register_event("end-file", cleanup)
 mp.register_event("file-loaded", on_start)
