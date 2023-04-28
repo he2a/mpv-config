@@ -1,3 +1,4 @@
 *.lua linguist-detectable=false
 *.glsl linguist-detectable=false
 *.hook linguist-detectable=false
+*.js linguist-detectable=false
