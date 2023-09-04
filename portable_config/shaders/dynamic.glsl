@@ -54,21 +54,15 @@ void hook() {
 #define weight vec3(0.2270270270, 0.3162162162, 0.0702702703)
 
 vec4 hook(){
-    uint i;
-    vec4 c;
+    uint i = 0;
+    vec4 c = HOOKED_texOff(offset[i]) * weight[i];
 
-    i = 0;
-    c = HOOKED_texOff(offset[i]) * weight[i];
+    for (i = 1; i < 3; i++) {
+        c += HOOKED_texOff( vec2(offset[i], 0.0)) * weight[i];
+        c += HOOKED_texOff(-vec2(offset[i], 0.0)) * weight[i];
+    }
 
-    i = 1;
-    c += HOOKED_texOff(vec2(offset[i], 0)) * weight[i];
-    c += HOOKED_texOff(-vec2(offset[i], 0)) * weight[i];
-
-    i = 2;
-    c += HOOKED_texOff(vec2(offset[i], 0)) * weight[i];
-    c += HOOKED_texOff(-vec2(offset[i], 0)) * weight[i];
-
-    return c;
+    return vec4(c.rgb, 1.0);
 }
 
 //!HOOK OUTPUT
@@ -80,21 +74,15 @@ vec4 hook(){
 #define weight vec3(0.2270270270, 0.3162162162, 0.0702702703)
 
 vec4 hook(){
-    uint i;
-    vec4 c;
+    uint i = 0;
+    vec4 c = BLURRED_texOff(offset[i]) * weight[i];
 
-    i = 0;
-    c = BLURRED_texOff(offset[i]) * weight[i];
+    for (i = 1; i < 3; i++) {
+        c += BLURRED_texOff( vec2(0.0, offset[i])) * weight[i];
+        c += BLURRED_texOff(-vec2(0.0, offset[i])) * weight[i];
+    }
 
-    i = 1;
-    c += BLURRED_texOff(vec2(0, offset[i])) * weight[i];
-    c += BLURRED_texOff(-vec2(0, offset[i])) * weight[i];
-
-    i = 2;
-    c += BLURRED_texOff(vec2(0, offset[i])) * weight[i];
-    c += BLURRED_texOff(-vec2(0, offset[i])) * weight[i];
-
-    return c;
+    return vec4(c.rgb, 1.0);
 }
 
 //!HOOK OUTPUT
@@ -108,8 +96,8 @@ void hook() {
     vec4 texelValue = texelFetch(BLURRED_raw, ivec2(gl_GlobalInvocationID.xy), 0);
     float L = L_sdr * max(max(texelValue.r, texelValue.g), texelValue.b);
 
-    atomicMin(L_min, uint(L));
-    atomicMax(L_max, uint(L));
+    atomicMin(L_min, uint(L + 0.5));
+    atomicMax(L_max, uint(L + 0.5));
 }
 
 //!HOOK OUTPUT
@@ -148,11 +136,11 @@ bool sence_changed() {
 }
 
 uint peak_harmonic_mean() {
-    float den = 1.0 / max(L_max, 1e-6);
+    float den = 1.0 / max(log2(L_max), 1e-6);
     for (uint i = 0; i < temporal_stable_frames - 1; i++) {
-        den += 1.0 / max(L_max_t[i], 1e-6);
+        den += 1.0 / max(log2(L_max_t[i]), 1e-6);
     }
-    float peak = temporal_stable_frames / den;
+    float peak = exp2(temporal_stable_frames / den);
     return uint(peak);
 }
 
