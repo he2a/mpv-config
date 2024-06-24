@@ -47,13 +47,15 @@ local function readEQFile(file_path)
         skipFirstRow = false
     else
         local band = parseLine(line)
-        local entry = {
-            frequency = band[1],
-            width_type = band[2],
-            width = band[3],
-            gain = band[4]
-        }
-        table.insert(eq_array, entry)
+		if band[4] ~= 0 then
+			local entry = {
+				frequency = band[1],
+				width_type = band[2],
+				width = band[3],
+				gain = band[4]
+			}
+			table.insert(eq_array, entry)
+		end
     end
   end
   file:close()
