@@ -51,7 +51,7 @@ Allows you to apply various shaders to video. All shaders should work out of box
 Allows you to choose subtitle in video, hide it or customize the looks of subtitle. You can either select one from presets or play around with font, color and size. Override ASS Style allows you to use the custom styles in ASS subtitles, which is applicable in Anime where subtitles are prestyled.
 
 ### Audio
-Allows you to select audio stream, change audio device, mute audio or apply filters. Currently you can apply DRC or Normalization to dynamically increase volume of audio. You can apply equalizer, but out of box it will not do anything. You have to customize the equalizer by editing `equalizer.csv` and `equalizer.conf` in `script-opts`. The equalizer format is similar to the format used by EqualizerAPO. itch Correction helps maintain pitch when speeding up or slowing down the playback. It is disabled by default in case of audio files.
+Allows you to select audio stream, change audio device, mute audio or apply filters. Currently you can apply DRC or Normalization to dynamically increase volume of audio. HRTF Surround can be used to emulate surround sound in case you are wearing headphones. It is automatically triggered when playing multichannel audio. You can apply equalizer with a default bass boost preset already present. You have to customize the equalizer by editing `equalizer.csv` and `equalizer.conf` in `script-opts`. The equalizer format is similar to the format used by EqualizerAPO. Pitch Correction helps maintain pitch when speeding up or slowing down the playback. It is disabled by default in case of audio files.
 
 ### Miscellaneous
 
