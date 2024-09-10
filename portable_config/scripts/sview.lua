@@ -1,13 +1,17 @@
--- A simple script to show multiple shaders running, in a clean list. Also hides osd messages of shader changes.
+-- A simple script to show multiple shaders running, in a clean list.
 
 sview_ov = mp.create_osd_overlay("ass-events")
 shader_t = false
+reactive_sview = false
+
+delay_time = 1
+flash_time = 2
 
 function slist(input)
     local fileNames = {}
     local paths = {}
 	if input ~= '' then
-		for path in input:gmatch("[^,]+") do
+		for path in input:gmatch("[^;]+") do
 			table.insert(paths, path)
 		end
 
@@ -20,7 +24,7 @@ function slist(input)
 		
 		local listString = "{\\b1}Shaders loaded:{\\b0}"
 		for i, fileName in ipairs(fileNames) do
-			listString = listString .. "\n" .. i .. ") " .. fileName
+			listString = listString .. "\n" .. i .. "❯ " .. fileName
 		end
 		sview_ov.data = listString
 	else
@@ -38,11 +42,27 @@ function toggle_sview()
 	end
 end
 
+delay_start = mp.add_periodic_timer(delay_time, 
+	function()
+		reactive_sview = true
+		delay_start:kill()
+	end, true)
+
+delay_update = mp.add_periodic_timer(flash_time, 
+	function()
+		sview_ov:remove()
+		delay_update:kill()
+	end, true)
+
 function update_list()
 	mp.osd_message('')
 	if shader_t then
 		slist(mp.get_property('glsl-shaders'))
 		sview_ov:update()
+	elseif reactive_sview then
+		slist(mp.get_property('glsl-shaders'))
+		sview_ov:update()
+		delay_update:resume()
 	end
 end
 
@@ -54,4 +74,18 @@ end
 
 mp.add_key_binding(nil, 'shader-view', toggle_sview)
 mp.add_key_binding(nil, 'shader-clear', clear_shaders)
+
+mp.register_event("start-file", 
+	function()
+		reactive_sview = false
+		sview_ov:remove()
+	end)
+
+mp.register_event("file-loaded", 
+	function()
+		if not delay_start:is_enabled() then 
+			delay_start:resume() 
+		end
+	end)
+
 mp.observe_property('glsl-shaders', nil, update_list)

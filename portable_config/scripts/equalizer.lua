@@ -7,7 +7,7 @@ local o = {
 	preamp = 0,
 	
 	eqr_enabled = 'no',
-	eqr_file = '~~/script-opts/equalizer.csv',
+	eqr_file = '~~/script-opts/equalizer/default.csv',
 	eqr_whitelist = 'audio',
 	
 	vid_threshold = 600,
@@ -49,10 +49,11 @@ local function readEQFile(file_path)
         local band = parseLine(line)
 		if band[4] ~= 0 then
 			local entry = {
-				frequency = band[1],
-				width_type = band[2],
-				width = band[3],
-				gain = band[4]
+				filter_type = band[1],
+				frequency = band[2],
+				width_type = band[3],
+				width = band[4],
+				gain = band[5]
 			}
 			table.insert(eq_array, entry)
 		end
@@ -100,7 +101,7 @@ local function type_check()
 end
 
 local function type_compare(a, b)
-  if (a == 'blank') or (a == b) then
+  if (a == 'allav') or (a == b) then
     return true
   elseif (a == 'video') and (b == 'movie') then
     return true
@@ -111,6 +112,19 @@ end
 
 
 -- Filter Push --------------------------------------------------------------------------------------
+
+local function eq_syntax(f_type)
+  if (f_type == 'p') then
+    return 'equalizer'
+  elseif (f_type == 'l') then
+    return 'lowshelf'
+  elseif (f_type == 'h') then
+    return 'highshelf'
+  else
+    mp.msg.error("Error in eq_syntax function. Unknown argument " .. f_type .. ". Defaulting to peaking filter.")
+    return 'equalizer'
+  end
+end
 
 local function updateEQ()
   if eqr_filter.enabled and pre_filter.enabled then 
@@ -123,9 +137,9 @@ local function updateEQ()
       local f = eqr_filter.bands[i]
       if f.gain ~= 0 then
         if eqr_filter.enabled then 
-          mp.command('no-osd af add equalizer=f=' .. f.frequency .. ':width_type=' .. f.width_type .. ':w=' .. f.width .. ':g=' .. f.gain)
+          mp.command('no-osd af add ' .. eq_syntax(f.filter_type) .. '=f=' .. f.frequency .. ':t=' .. f.width_type .. ':w=' .. f.width .. ':g=' .. f.gain)
         else
-          mp.command('no-osd af remove equalizer=f=' .. f.frequency .. ':width_type=' .. f.width_type .. ':w=' .. f.width .. ':g=' .. f.gain)
+          mp.command('no-osd af remove ' .. eq_syntax(f.filter_type) .. '=f=' .. f.frequency .. ':t=' .. f.width_type .. ':w=' .. f.width .. ':g=' .. f.gain)
         end
       end
     end
