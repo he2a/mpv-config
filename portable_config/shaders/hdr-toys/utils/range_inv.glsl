@@ -1,4 +1,4 @@
-// from SMPTE "legal" to "full" signal range
+// from "limited" to "full" signal range
 
 //!PARAM black
 //!TYPE float
@@ -25,9 +25,9 @@ vec3 range_inv(vec3 x, float w, float b) {
 }
 
 vec4 hook() {
-    vec4 color = HOOKED_texOff(0);
+    vec4 color = HOOKED_tex(HOOKED_pos);
 
-    float l = pow(2.0, depth);
+    float l = exp2(depth);
     float d = l - 1.0;
     float b = l * black / d;
     float w = l * white / d;

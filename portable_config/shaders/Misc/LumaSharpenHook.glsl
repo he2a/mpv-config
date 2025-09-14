@@ -18,15 +18,15 @@
 
 
 // -- Sharpening --
-#define sharp_strength 0.30   //[0.10 to 3.00] Strength of the sharpening
+#define sharp_strength 1.20   //[0.10 to 3.00] Strength of the sharpening
 
 #define sharp_clamp    0.035  //[0.000 to 1.000] Limits maximum amount of sharpening a pixel recieves - Default is 0.035
 
 // -- Advanced sharpening settings --
-#define pattern 2        //[1|2|3|4] Choose a sample pattern. 1 = Fast, 2 = Normal, 3 = Wider, 4 = Pyramid shaped.
+#define pattern 8        //[1|2|3|4] Choose a sample pattern. 1 = Fast, 2 = Normal, 3 = Wider, 4 = Pyramid shaped.
                          //[8|9] Experimental slower patterns. 8 = 9 tap 9 fetch gaussian, 9 = 9 tap 9 fetch high pass.
                          
-#define offset_bias 1.0  //[0.0 to 6.0] Offset bias adjusts the radius of the sampling pattern.
+#define offset_bias 2.0  //[0.0 to 6.0] Offset bias adjusts the radius of the sampling pattern.
 
 vec4 hook(){
     vec4 colorInput = LUMA_tex(LUMA_pos);

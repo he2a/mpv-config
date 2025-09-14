@@ -1,4 +1,4 @@
-// https://github.com/ampas/aces-dev/blob/dev/transforms/ctl/lib/ACESlib.Utilities_Color.ctl
+// https://github.com/ampas/aces-core/blob/dev/lib/Lib.Academy.DisplayEncoding.ctl
 // moncurve with gamma of 2.4 and offset of 0.055 matches the EOTF found in IEC 61966-2-1:1999 (sRGB)
 
 //!HOOK OUTPUT
@@ -23,7 +23,7 @@ vec3 monitor_curve_eotf(vec3 color) {
 }
 
 vec4 hook() {
-    vec4 color = HOOKED_texOff(0);
+    vec4 color = HOOKED_tex(HOOKED_pos);
 
     color.rgb = monitor_curve_eotf(color.rgb);
 

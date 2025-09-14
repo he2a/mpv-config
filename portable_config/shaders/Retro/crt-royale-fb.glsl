@@ -19,7 +19,7 @@
 //!TYPE CONSTANT float
 //!MINIMUM -0.33333334
 //!MAXIMUM 0.33333334
--0.33333334
+-0.25
 
 //!PARAM aa_subpixel_r_offset_y_runtime
 //!DESC AA - Subpixel R Offset Y
@@ -96,14 +96,14 @@
 //!TYPE CONSTANT float
 //!MINIMUM 0
 //!MAXIMUM 1
-0
+0.1
 
 //!PARAM bloom_underestimate_levels
 //!DESC Bloom - Underestimate Levels
 //!TYPE CONSTANT float
 //!MINIMUM 0
 //!MAXIMUM 5
-0.8
+0.25
 
 //!PARAM border_compress
 //!DESC Border - Compression
@@ -124,7 +124,7 @@
 //!TYPE CONSTANT float
 //!MINIMUM 0.0000001
 //!MAXIMUM 0.5
-0.015
+0.001
 
 //!PARAM convergence_offset_x_b
 //!DESC Convergence - Offset X Blue
@@ -173,7 +173,7 @@
 //!TYPE CONSTANT float
 //!MINIMUM 1
 //!MAXIMUM 5
-2.5
+2.4
 
 //!PARAM diffusion_weight
 //!DESC Diffusion Weight
@@ -222,7 +222,7 @@
 //!TYPE CONSTANT float
 //!MINIMUM 0.16
 //!MAXIMUM 1024
-2
+1
 
 //!PARAM geom_tilt_angle_x
 //!DESC Geometry - Tilt Angle X
@@ -243,7 +243,7 @@
 //!TYPE CONSTANT float
 //!MINIMUM 0.5
 //!MAXIMUM 1024
-2
+1
 
 //!PARAM halation_weight
 //!DESC Halation Weight
@@ -320,7 +320,7 @@
 //!TYPE CONSTANT float
 //!MINIMUM 0
 //!MAXIMUM 2
-1
+2
 
 //!TEXTURE mask_grille_texture_small
 //!SIZE 64 64

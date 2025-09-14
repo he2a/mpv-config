@@ -3,39 +3,39 @@
 
 //!PARAM cyan_limit
 //!TYPE float
-//!MINIMUM 1.000001
-//!MAXIMUM 2
-1.5187050250638159
+//!MINIMUM 1.01
+//!MAXIMUM 2.0
+1.216
 
 //!PARAM magenta_limit
 //!TYPE float
-//!MINIMUM 1.000001
-//!MAXIMUM 2
-1.0750082769546088
+//!MINIMUM 1.01
+//!MAXIMUM 2.0
+1.035
 
 //!PARAM yellow_limit
 //!TYPE float
-//!MINIMUM 1.000001
-//!MAXIMUM 2
-1.0887800403483898
+//!MINIMUM 1.01
+//!MAXIMUM 2.0
+1.076
 
 //!PARAM cyan_threshold
 //!TYPE float
-//!MINIMUM 0
-//!MAXIMUM 2
-1.050508660266247
+//!MINIMUM 0.0
+//!MAXIMUM 1.0
+0.998
 
 //!PARAM magenta_threshold
 //!TYPE float
-//!MINIMUM 0
-//!MAXIMUM 2
-0.940509816042432
+//!MINIMUM 0.0
+//!MAXIMUM 1.0
+0.940
 
 //!PARAM yellow_threshold
 //!TYPE float
-//!MINIMUM 0
-//!MAXIMUM 2
-0.9771607996420639
+//!MINIMUM 0.0
+//!MAXIMUM 1.0
+0.977
 
 //!HOOK OUTPUT
 //!BIND HOOKED
@@ -70,17 +70,19 @@ vec3 gamut_compress(vec3 rgb) {
     return crgb;
 }
 
-// BT.2020 to BT.709
-mat3 M = mat3(
-     1.66049100210843540, -0.58764113878854950,  -0.072849863319884740,
-    -0.12455047452159074,  1.13289989712595960,  -0.008349422604369515,
-    -0.01815076335490526, -0.10057889800800737,   1.118729661362913000
-);
+vec3 BT2020_to_BT709(vec3 color) {
+    return color * mat3(
+         1.66049100210843540, -0.58764113878854950,  -0.072849863319884740,
+        -0.12455047452159074,  1.13289989712595960,  -0.008349422604369515,
+        -0.01815076335490526, -0.10057889800800737,   1.118729661362913000
+    );
+}
 
 vec4 hook() {
-    vec4 color = HOOKED_texOff(0);
+    vec4 color = HOOKED_tex(HOOKED_pos);
 
-    color.rgb = gamut_compress(color.rgb * M);
+    color.rgb = BT2020_to_BT709(color.rgb);
+    color.rgb = gamut_compress(color.rgb);
 
     return color;
 }

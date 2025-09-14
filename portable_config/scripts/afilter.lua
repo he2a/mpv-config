@@ -4,7 +4,7 @@ local msg = require 'mp.msg'
 local opt = require 'mp.options'
 
 local o = {
-	drc_enabled = 'no',	
+	drc_enabled = 'yes',	
 	drc_knee = 2.8,
 	drc_ratio = 2,
 	drc_makeup = 8,
@@ -13,13 +13,22 @@ local o = {
 	drc_threshold = -20,
 	drc_whitelist = 'audio',
 
-	dnm_enabled = 'yes',
+	dnm_enabled = 'no',
 	dnm_gauss = 5,
 	dnm_ratio = 4,
 	dnm_frame = 400,
 	dnm_peak = 0.95,
 	dnm_minthres = 0,
 	dnm_whitelist = 'movie',
+	
+	snm_enabled = 'yes',
+	snm_peak = 0.9,
+	snm_expand = 2,
+	snm_compress = 2,
+	snm_threshold = 0.2,
+	snm_raise = 0.0001,
+	snm_fall = 0.0005,
+	snm_whitelist = 'movie',
 	
 	lnm_enabled = 'yes',
 	lnm_target = -16,
@@ -32,6 +41,7 @@ local o = {
 	sofa_type = 'time',
 	sofa_gain = 10,
 	sofa_lfe = 2,
+	sofa_rad=1,
 	sofa_whitelist = 'vidmc',
 	
 	vid_threshold = 600,
@@ -53,22 +63,25 @@ local first_run  = true
 local med_type   = nil
 local vid_length = o.vid_threshold
 local vid_aratio = o.vid_arlimit
-local auto_delay = 0.2
+local auto_delay = 0.5
 
 local drc_whlist = o.drc_whitelist
 local dnm_whlist = o.dnm_whitelist
+local snm_whlist = o.snm_whitelist
 local lnm_whlist = o.lnm_whitelist
 local sfa_whlist = o.sofa_whitelist
 
 local drc_enable = txt2bool(o.drc_enabled)
 local dnm_enable = txt2bool(o.dnm_enabled)
+local snm_enable = txt2bool(o.lnm_enabled)
 local lnm_enable = txt2bool(o.lnm_enabled)
 local sfa_enable = txt2bool(o.sofa_enabled)
 
 local drc_filter = { enabled = false, syntax = 'acompressor=threshold=' .. o.drc_threshold .. 'dB:ratio=' .. o.drc_ratio .. ':attack=' .. o.drc_attack .. ':release=' .. o.drc_release .. ':makeup=' .. o.drc_makeup .. 'dB:knee=' .. o.drc_knee .. 'dB' }
 local dnm_filter = { enabled = false, syntax = 'dynaudnorm=f=' .. o.dnm_frame .. ':g=' .. o.dnm_gauss .. ':m=' .. o.dnm_ratio .. ':p=' .. o.dnm_peak .. ':t=' .. o.dnm_minthres }
+local snm_filter = { enabled = false, syntax = 'speechnorm=p=' .. o.snm_peak .. ':e=' .. o.snm_expand .. ':c=' .. o.snm_compress .. ':t=' .. o.snm_threshold .. ':r=' .. o.snm_raise .. ':f=' .. o.snm_fall }
 local lnm_filter = { enabled = false, syntax = 'loudnorm=i=' .. o.lnm_target .. ':lra=' .. o.lnm_range .. ':tp=' .. o.lnm_peak }
-local sfa_filter = { enabled = false, syntax = 'sofalizer=sofa="' .. mp.command_native({"expand-path", o.sofa_file}) .. '":type='.. o.sofa_type .. ':gain=' .. o.sofa_gain .. ':lfegain=' .. o.sofa_lfe }
+local sfa_filter = { enabled = false, syntax = 'sofalizer=sofa="' .. mp.command_native({"expand-path", o.sofa_file}) .. '":type='.. o.sofa_type .. ':radius=' .. o.sofa_rad .. ':gain=' .. o.sofa_gain .. ':lfegain=' .. o.sofa_lfe }
 
 -- Misc Functions --------------------------------------------------------------------------------------
 
@@ -140,6 +153,12 @@ local function toggle_dnm()
   if dnm_filter.enabled then mp.osd_message("Dynamic Audio Normalizer ON") else mp.osd_message("Dynamic Normalizer OFF") end
 end
 
+local function toggle_snm()
+  snm_filter.enabled = not snm_filter.enabled
+  mp.command(push_filter(snm_filter))
+  if snm_filter.enabled then mp.osd_message("Speech Normalizer ON") else mp.osd_message("Speech Normalizer OFF") end
+end
+
 local function toggle_lnm()
   lnm_filter.enabled = not lnm_filter.enabled
   mp.command(push_filter(lnm_filter))
@@ -167,6 +186,10 @@ local function init_filter()
       dnm_filter.enabled = false
       mp.command(push_filter(dnm_filter))
     end
+    if snm_filter.enabled then 
+      snm_filter.enabled = false
+      mp.command(push_filter(snm_filter))
+    end
     if lnm_filter.enabled then 
       lnm_filter.enabled = false
       mp.command(push_filter(lnm_filter))
@@ -190,6 +213,10 @@ local function init_filter()
           lnm_filter.enabled = true
           mp.command(push_filter(lnm_filter))
         end
+        if snm_enable and type_compare(snm_whlist, med_type) then 
+          snm_filter.enabled = true
+          mp.command(push_filter(snm_filter))
+        end
         if drc_enable and type_compare(drc_whlist, med_type) then 
           drc_filter.enabled = true
           mp.command(push_filter(drc_filter))
@@ -208,6 +235,7 @@ end
 -- Events and bindings code --------------------------------------------------------------------------------------------------------------------------
 
 mp.add_key_binding('k', "toggle-drc", toggle_drc)
+mp.add_key_binding('s', "toggle-snm", toggle_snm)
 mp.add_key_binding('e', "toggle-lnm", toggle_lnm)
 mp.add_key_binding('E', "toggle-dnm", toggle_dnm)
 mp.add_key_binding('S', "toggle-sfa", toggle_sfa)
