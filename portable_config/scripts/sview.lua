@@ -1,148 +1,146 @@
 -- A simple script to show multiple shaders running, in a clean list.
 local mp = require 'mp'
-local utils = require 'mp.utils'
 local msg = require 'mp.msg'
 local opt = require 'mp.options'
+
 local o = {
-	show_change = 'yes',
-	show_number = 'no',
-	show_extension = 'no',
-	bullet_symbol = '›',
-	flash_timer = 2
+    show_change = 'yes',
+    show_number = 'no',
+    show_extension = 'no',
+    bullet_symbol = '›',
+    flash_timer = 2
 }
-local function txt2bool(txt)
-	if (txt == 'yes') or (txt == 'true') then
-		return true
-	else
-		return false
-	end
-end
 opt.read_options(o)
-local delay_tm = 1
+
 local list_sym = o.bullet_symbol
 local flash_tm = o.flash_timer
-local reactive = txt2bool(o.show_change)
-local show_num = txt2bool(o.show_number)
-local show_ext = txt2bool(o.show_extension)
-sview_ov = mp.create_osd_overlay("ass-events")
-shader_t = false
-reactive_sview = false
-function inlnCond ( cond , yes , no )
-    if cond then return yes else return no end
-end
-function slist(input)
-    local shaderName = {}
-    local shaderPath = {}
-    
-    if not input or input == '' then
-        sview_ov.data = "{\\b1}No shaders loaded.{\\b0}"
-        return
+local reactive = (o.show_change == 'yes' or o.show_change == 'true')
+local show_num = (o.show_number == 'yes' or o.show_number == 'true')
+local show_ext = (o.show_extension == 'yes' or o.show_extension == 'true')
+
+local sview_ov = mp.create_osd_overlay("ass-events")
+local persistent_mode = false
+local playback_ready = false
+local settle_timer = nil
+local saved_shaders = nil
+
+-- Timer to hide the reactive overlay
+local hide_timer = mp.add_timeout(flash_tm, function()
+    if not persistent_mode then
+        sview_ov:remove()
     end
+end)
+hide_timer:kill()
+
+-- Debounce timer to handle multiple rapid shader changes gracefully
+local debounce_timer = mp.add_timeout(0.05, function()
+    render_slist()
+end)
+debounce_timer:kill()
+
+function render_slist()
+    local input = mp.get_property('glsl-shaders', '')
+    local shaderName = {}
     
-    pcall(function()
+    if input ~= '' then
         for path in input:gmatch("[^;:]+") do
-            table.insert(shaderPath, path)
-        end
-    end)
-    
-    if #shaderPath > 0 then
-        for _, path in ipairs(shaderPath) do
-            local fileName = path:match(".+[\\/](.+)$")
+            local fileName = path:match(".+[\\/](.+)$") or path
+            local name = fileName:match("(.+)%.[^.]+$") or fileName
             
-            if fileName then
-                local name = fileName:match("(.+)%.[^.]+$") or fileName
-                table.insert(shaderName, inlnCond((not show_ext) and name, name, fileName))
-            else
-                table.insert(shaderName, path)
-            end
+            table.insert(shaderName, show_ext and fileName or name)
+        end
+
+        local listString = "{\\r\\b1}Shaders Loaded{\\b0\\fscx75\\fscy75}\\N"
+        
+        for i, sName in ipairs(shaderName) do
+            local prefix = show_num and (i .. "\\h" .. list_sym .. "\\h") or (list_sym .. "\\h")
+            listString = listString .. prefix .. sName .. "\\N"
         end
         
-        local listString = "{\\r\\b1}Shaders Loaded{\\b0\\fscx75\\fscy75}\\N"
-        for i, fileName in ipairs(shaderName) do
-            listString = listString .. inlnCond(show_num,i .. "\\h",'') .. list_sym .. "\\h" .. fileName .. "\\N"
-        end
         sview_ov.data = listString
     else
         sview_ov.data = "{\\b1}No shaders loaded.{\\b0}"
     end
+    
+    sview_ov:update()
+    
+    if not persistent_mode then
+        hide_timer:kill()
+        hide_timer:resume()
+    end
 end
 
 function toggle_sview()
-	if shader_t then
-		shader_t = false
-		sview_ov:remove()
-	else
-		shader_t = true
-		update_list()
-	end
+    persistent_mode = not persistent_mode
+    if persistent_mode then
+        hide_timer:kill()
+        debounce_timer:kill()
+        render_slist()
+    else
+        sview_ov:remove()
+    end
 end
 
-delay_start = mp.add_periodic_timer(delay_tm, 
-	function()
-		reactive_sview = true
-		delay_start:kill()
-	end, true)
-	
-delay_update = mp.add_periodic_timer(flash_tm, 
-	function()
-		sview_ov:remove()
-		delay_update:kill()
-	end, true)
-	
-function update_list()
-    local shader_property = ""
-    pcall(function()
-        shader_property = mp.get_property('glsl-shaders') or ""
-    end)
+function on_shader_change(name, value)
+    -- Programmatic attempt to clear standard OSD text
+    mp.commandv("show-text", "", 0)
     
-	mp.osd_message("", 0)
-	if shader_t then
-		slist(shader_property)
-		sview_ov:update()
-	elseif reactive_sview and reactive then
-		slist(shader_property)
-		sview_ov:update()
-		delay_update:resume()
-	end
+    if persistent_mode then
+        debounce_timer:kill()
+        debounce_timer:resume()
+    elseif reactive and playback_ready then
+        debounce_timer:kill()
+        debounce_timer:resume()
+    end
 end
 
-function clear_shaders()
-    local shader_property = ""
-    pcall(function()
-        shader_property = mp.get_property('glsl-shaders') or ""
-    end)
-    
-	if shader_property ~= '' then
-		mp.command('change-list glsl-shaders clr all')
-	end
+function shader_debug()
+    if saved_shaders == nil then
+        local current_shaders = mp.get_property('glsl-shaders', '')
+        if current_shaders == '' then
+            msg.info("No shaders loaded.")
+        else
+            saved_shaders = current_shaders
+            mp.command('no-osd change-list glsl-shaders clr all')
+        end
+    else
+        mp.command('no-osd change-list glsl-shaders clr all')
+        mp.set_property('glsl-shaders', saved_shaders)
+        saved_shaders = nil
+    end
 end
 
 mp.add_key_binding(nil, 'shader-view', toggle_sview)
-mp.add_key_binding(nil, 'shader-clear', clear_shaders)
+mp.add_key_binding(nil, 'shader-debug', shader_debug)
 
-mp.register_event("end-file", 
-	function()
-		if delay_start:is_enabled() then 
-			delay_start:kill()
-		end
-	end)
-	
-mp.register_event("start-file", 
-	function()
-		reactive_sview = false
-		sview_ov:remove()
-	end)
-	
-mp.register_event("file-loaded", 
-	function()
-		if not delay_start:is_enabled() then 
-			delay_start:resume() 
-		else
-			delay_start:kill()
-			delay_start:resume() 
-		end
-	end)
-	
-mp.observe_property('glsl-shaders', nil, function(name, value)
-    update_list()
+mp.register_event("start-file", function()
+    -- Lock reactive UI and clear entirely on new file load
+    playback_ready = false
+    persistent_mode = false
+    
+    -- Reset the shader-debug toggle state
+    saved_shaders = nil
+    
+    -- Safely kill the settle timer if files are loaded in rapid succession
+    if settle_timer then
+        settle_timer:kill()
+        settle_timer = nil
+    end
+    
+    hide_timer:kill()
+    debounce_timer:kill()
+    sview_ov:remove()
 end)
+
+mp.register_event("playback-restart", function()
+    -- Video output has initialized. Start a 1-second suppression window
+    -- to allow all delayed autoprofiles and system lags to finish flushing.
+    if not playback_ready and not settle_timer then
+        settle_timer = mp.add_timeout(1.0, function()
+            playback_ready = true
+            settle_timer = nil
+        end)
+    end
+end)
+
+mp.observe_property('glsl-shaders', 'string', on_shader_change)

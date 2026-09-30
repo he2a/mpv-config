@@ -1,0 +1,18 @@
+//!HOOK CHROMA
+//!BIND HOOKED
+//!DESC bw_noChroma
+
+/* --- bw_noChroma (mpv glsl.hook) --- */
+/* v1.40 (07/2023) released by butterw under GPLv3
+(0 texture, 0 arithmetic)
+
+CHROMA hook, enforces luma (grayscale) on yuv source by setting Cb=Cr=0.5. 
+Cb, Cr are in [0, 1.0].
+
+- If the source isn't yuv, a rgb shader is required.
+Alternative: bw.hk can handle both yuv and rgb inputs and can apply a black & white film emulation.
+*/
+
+vec4 hook(){
+	return vec4(0.5);
+}
