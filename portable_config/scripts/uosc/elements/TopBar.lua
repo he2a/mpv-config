@@ -1,46 +1,6 @@
 local Element = require('elements/Element')
 
----@alias TopBarButtonProps {icon: string; background: string; anchor_id?: string; command: string|fun()}
-
----@class TopBarButton : Element
-local TopBarButton = class(Element)
-
----@param id string
----@param props TopBarButtonProps
-function TopBarButton:new(id, props) return Class.new(self, id, props) --[[@as TopBarButton]] end
-function TopBarButton:init(id, props)
-	Element.init(self, id, props)
-	self.anchor_id = 'top_bar'
-	self.icon = props.icon
-	self.background = props.background
-	self.command = props.command
-end
-
-function TopBarButton:handle_click()
-	mp.command(type(self.command) == 'function' and self.command() or self.command)
-end
-
-function TopBarButton:render()
-	local visibility = self:get_visibility()
-	if visibility <= 0 then return end
-	local ass = assdraw.ass_new()
-
-	-- Background on hover
-	if self.proximity_raw == 0 then
-		ass:rect(self.ax, self.ay, self.bx, self.by, {color = self.background, opacity = visibility})
-	end
-	cursor:zone('primary_click', self, function() self:handle_click() end)
-
-	local width, height = self.bx - self.ax, self.by - self.ay
-	local icon_size = math.min(width, height) * 0.5
-	ass:icon(self.ax + width / 2, self.ay + height / 2, icon_size, self.icon, {
-		opacity = visibility, border = options.text_border * state.scale,
-	})
-
-	return ass
-end
-
---[[ TopBar ]]
+---@alias TopBarButtonProps {icon: string; hover_fg?: string; hover_bg?: string; command: (fun():string)}
 
 ---@class TopBar : Element
 local TopBar = class(Element)
@@ -49,46 +9,86 @@ function TopBar:new() return Class.new(self) --[[@as TopBar]] end
 function TopBar:init()
 	Element.init(self, 'top_bar', {render_order = 4})
 	self.size = 0
-	self.icon_size, self.spacing, self.font_size, self.title_bx, self.title_by = 1, 1, 1, 1, 1
-	self.show_alt_title = false
+	self.alt_title_size = 0
+	self.chapter_size = 0
+	self.titles_spacing = 1
+	self.icon_size, self.font_size, self.title_by = 1, 1, 1
+	self.show_alt_as_main = false
 	self.main_title, self.alt_title = nil, nil
+	---@type table<string, string|nil>
+	self.render_titles = {}
+	---@type {index: number; title: string}|nil
+	self.current_chapter = nil
 
-	local function get_maximized_command()
+	local function maximized_command()
 		if state.platform == 'windows' then
-			return state.border
+			mp.command(state.border
 				and (state.fullscreen and 'set fullscreen no;cycle window-maximized' or 'cycle window-maximized')
-				or 'set window-maximized no;cycle fullscreen'
+				or 'set window-maximized no;cycle fullscreen')
+		else
+			mp.command(state.fullormaxed and 'set fullscreen no;set window-maximized no' or 'set window-maximized yes')
 		end
-		return state.fullormaxed and 'set fullscreen no;set window-maximized no' or 'set window-maximized yes'
 	end
 
-	-- Order aligns from right to left
-	self.buttons = {
-		TopBarButton:new('tb_close', {
-			icon = 'close', background = '2311e8', command = 'quit', render_order = self.render_order,
-		}),
-		TopBarButton:new('tb_max', {
-			icon = 'crop_square',
-			background = '222222',
-			command = get_maximized_command,
-			render_order = self.render_order,
-		}),
-		TopBarButton:new('tb_min', {
-			icon = 'minimize',
-			background = '222222',
-			command = 'cycle window-minimized',
-			render_order = self.render_order,
-		}),
-	}
+	local close = {icon = 'close', hover_bg = '2311e8', hover_fg = 'ffffff', command = function() mp.command('quit') end}
+	local max = {icon = 'crop_square', command = maximized_command}
+	local min = {icon = 'minimize', command = function() mp.command('cycle window-minimized') end}
+	self.buttons = options.top_bar_controls == 'left' and {close, max, min} or {min, max, close}
 
-	self:decide_titles()
+	self:register_observers()
 	self:decide_enabled()
 	self:update_dimensions()
 end
 
-function TopBar:destroy()
-	for _, button in ipairs(self.buttons) do button:destroy() end
-	Element.destroy(self)
+---@return string|nil
+local function expand_template(template)
+	-- escape ASS, and strip newlines and trailing slashes and trim whitespace
+	local tmp = mp.command_native({'expand-text', template}):gsub('\\n', ' '):gsub('[\\%s]+$', ''):gsub('^%s+', '')
+	return tmp and tmp ~= '' and ass_escape(tmp) or nil
+end
+
+function TopBar:add_template_listener(template, callback)
+	local props = get_expansion_props(template)
+	for prop, _ in pairs(props) do
+		self:observe_mp_property(prop, 'native', callback)
+	end
+	if not next(props) then callback() end
+end
+
+function TopBar:register_observers()
+	-- Main title
+	if #options.top_bar_title > 0 and options.top_bar_title ~= 'no' then
+		if options.top_bar_title == 'yes' then
+			local template = nil
+			local function update_main_title()
+				self.main_title = expand_template(template)
+				self:update_render_titles()
+			end
+			local function remove_template_listener(callback) mp.unobserve_property(callback) end
+
+			self:observe_mp_property('title', 'string', function(_, title)
+				remove_template_listener(update_main_title)
+				template = title
+				if template then
+					if template:sub(-6) == ' - mpv' then template = template:sub(1, -7) end
+					self:add_template_listener(template, update_main_title)
+				end
+			end)
+		elseif type(options.top_bar_title) == 'string' then
+			self:add_template_listener(options.top_bar_title, function()
+				self.main_title = expand_template(options.top_bar_title)
+				self:update_render_titles()
+			end)
+		end
+	end
+
+	-- Alt title
+	if #options.top_bar_alt_title > 0 and options.top_bar_alt_title ~= 'no' then
+		self:add_template_listener(options.top_bar_alt_title, function()
+			self.alt_title = expand_template(options.top_bar_alt_title)
+			self:update_render_titles()
+		end)
+	end
 end
 
 function TopBar:decide_enabled()
@@ -98,69 +98,97 @@ function TopBar:decide_enabled()
 		self.enabled = options.top_bar == 'always'
 	end
 	self.enabled = self.enabled and (options.top_bar_controls or options.top_bar_title ~= 'no' or state.has_playlist)
-	for _, element in ipairs(self.buttons) do
-		element.enabled = self.enabled and options.top_bar_controls
-	end
 end
 
-function TopBar:decide_titles()
-	self.alt_title = state.alt_title ~= '' and state.alt_title or nil
-	self.main_title = state.title ~= '' and state.title or nil
+-- Set titles. Both have to be passed at the same time so that they can be normalized & deduplicated.
+function TopBar:update_render_titles()
+	local main, alt = self.main_title, self.alt_title
 
-	if (self.main_title == 'No file') then
-		self.main_title = t('No file')
+	if main == 'No file' then
+		main = t('No file')
 	end
 
 	-- Fall back to alt title if main is empty
-	if not self.main_title then
-		self.main_title, self.alt_title = self.alt_title, nil
+	if not main or main == '' then
+		main, alt = alt, nil
 	end
 
 	-- Deduplicate the main and alt titles by checking if one completely
 	-- contains the other, and using only the longer one.
-	if self.main_title and self.alt_title and not self.show_alt_title then
+	if main and alt and not self.show_alt_as_main then
 		local longer_title, shorter_title
-		if #self.main_title < #self.alt_title then
-			longer_title, shorter_title = self.alt_title, self.main_title
+		if #main < #alt then
+			longer_title, shorter_title = alt, main
 		else
-			longer_title, shorter_title = self.main_title, self.alt_title
+			longer_title, shorter_title = main, alt
 		end
 
-		local escaped_shorter_title = string.gsub(shorter_title --[[@as string]], '[%(%)%.%+%-%*%?%[%]%^%$%%]', '%%%1')
+		local escaped_shorter_title = regexp_escape(shorter_title --[[@as string]])
 		if string.match(longer_title --[[@as string]], escaped_shorter_title) then
-			self.main_title, self.alt_title = longer_title, nil
+			main, alt = longer_title, nil
 		end
+	end
+
+	if self.show_alt_as_main and alt and alt ~= '' then
+		main, alt = alt, nil
+	end
+
+	self.render_titles.main, self.render_titles.alt = main, alt
+	self:update_dimensions()
+	request_render()
+end
+
+function TopBar:select_current_chapter()
+	local current_chapter_index = self.current_chapter and self.current_chapter.index
+	local current_chapter
+	if state.time and state.chapters then
+		_, current_chapter = itable_find(state.chapters, function(c) return state.time >= c.time end, #state.chapters, 1)
+	end
+	local new_chapter_index = current_chapter and current_chapter.index
+	if current_chapter_index ~= new_chapter_index then
+		self.current_chapter = current_chapter
+		if itable_has(config.top_bar_flash_on, 'chapter') then
+			self:flash()
+		end
+		self:update_dimensions()
 	end
 end
 
 function TopBar:update_dimensions()
 	self.size = round(options.top_bar_size * state.scale)
+	self.title_spacing = round(1 * state.scale)
 	self.icon_size = round(self.size * 0.5)
-	self.spacing = math.ceil(self.size * 0.25)
-	self.font_size = math.floor((self.size - (self.spacing * 2)) * options.font_scale)
-	self.button_width = round(self.size * 1.15)
+	self.font_size = math.floor((self.size - (math.ceil(self.size * 0.25) * 2)) * options.font_scale)
+	self.alt_title_size = round(self.font_size * 1.2)
+	self.chapter_size = round(self.font_size * 1.1)
 	local window_border_size = Elements:v('window_border', 'size', 0)
+	local min_hitbox_height = self.size
+	if self.render_titles.alt and options.top_bar_alt_title_place == 'below' then
+		min_hitbox_height = min_hitbox_height + self.title_spacing + self.alt_title_size
+	end
+	if self.current_chapter then
+		min_hitbox_height = min_hitbox_height + self.title_spacing + self.chapter_size
+	end
+	self.ax = window_border_size
 	self.ay = window_border_size
 	self.bx = display.width - window_border_size
-	self.by = self.size + window_border_size
-	self.title_bx = self.bx - (options.top_bar_controls and (self.button_width * 3) or 0)
-	self.ax = (options.top_bar_title ~= 'no' or state.has_playlist) and window_border_size or self.title_bx
-
-	local button_bx = self.bx
-	for _, element in pairs(self.buttons) do
-		element.ax, element.bx = button_bx - self.button_width, button_bx
-		element.ay, element.by = self.ay, self.by
-		button_bx = button_bx - self.button_width
-	end
+	-- We extend the hitbox so that people with low proximity options can still click on chapter button
+	self.by = math.max(self.size + window_border_size, min_hitbox_height - options.proximity_in)
 end
 
 function TopBar:toggle_title()
 	if options.top_bar_alt_title_place ~= 'toggle' then return end
-	self.show_alt_title = not self.show_alt_title
+	self.show_alt_as_main = not self.show_alt_as_main
+	self:update_render_titles()
 end
 
-function TopBar:on_prop_title() self:decide_titles() end
-function TopBar:on_prop_alt_title() self:decide_titles() end
+function TopBar:on_prop_time()
+	self:select_current_chapter()
+end
+
+function TopBar:on_prop_chapters()
+	self:select_current_chapter()
+end
 
 function TopBar:on_prop_border()
 	self:decide_enabled()
@@ -198,15 +226,56 @@ function TopBar:render()
 	local visibility = self:get_visibility()
 	if visibility <= 0 then return end
 	local ass = assdraw.ass_new()
+	-- `by` might be artificially extended so people with low proximity options
+	-- can still click on chapter button, so we can't use it for rendering.
+	local ax, ay, bx, by = self.ax, self.ay, self.bx, self.ay + self.size
+	local margin = math.floor((self.size - self.font_size) / 4)
+
+	-- Window controls
+	if options.top_bar_controls then
+		local is_left, button_ax = options.top_bar_controls == 'left', 0
+		if is_left then
+			button_ax = ax
+			ax = self.size * #self.buttons
+		else
+			button_ax = bx - self.size * #self.buttons
+			bx = button_ax
+		end
+
+		for _, button in ipairs(self.buttons) do
+			local rect = {ax = button_ax, ay = ay, bx = button_ax + self.size, by = by}
+			local is_hover = get_point_to_rectangle_proximity(cursor, rect) <= 0
+			local opacity = is_hover and 1 or config.opacity.controls
+			local button_fg = is_hover and (button.hover_fg or bg) or fg
+			local button_bg = is_hover and (button.hover_bg or fg) or bg
+
+			cursor:zone('primary_click', rect, button.command)
+
+			local bg_size = self.size - margin
+			local bg_ax, bg_ay = rect.ax + (is_left and margin or 0), rect.ay + margin
+			local bg_bx, bg_by = bg_ax + bg_size, bg_ay + bg_size
+
+			ass:rect(bg_ax, bg_ay, bg_bx, bg_by, {
+				color = button_bg, opacity = visibility * opacity, radius = state.radius,
+			})
+
+			ass:icon(bg_ax + bg_size / 2, bg_ay + bg_size / 2, bg_size * 0.5, button.icon, {
+				color = button_fg,
+				border_color = button_bg,
+				opacity = visibility,
+				border = options.text_border * state.scale,
+			})
+
+			button_ax = button_ax + self.size
+		end
+	end
 
 	-- Window title
-	if state.title or state.has_playlist then
-		local bg_margin = math.floor((self.size - self.font_size) / 4)
-		local padding = self.font_size / 2
-		local spacing = 1
-		local title_ax = self.ax + bg_margin
-		local title_ay = self.ay + bg_margin
-		local max_bx = self.title_bx - self.spacing
+	local main_title, alt_title = self.render_titles.main, self.render_titles.alt
+	if main_title or state.has_playlist then
+		local padding = round(self.font_size / 2)
+		local left_aligned = options.top_bar_controls == 'left'
+		local title_ax, title_bx, title_ay = ax + margin, bx - margin, self.ay + margin
 
 		-- Playlist position
 		if state.has_playlist then
@@ -214,13 +283,15 @@ function TopBar:render()
 			local formatted_text = '{\\b1}' .. state.playlist_pos .. '{\\b0\\fs' .. self.font_size * 0.9 .. '}/'
 				.. state.playlist_count
 			local opts = {size = self.font_size, wrap = 2, color = fgt, opacity = visibility}
+			local rect_width = round(text_width(text, opts) + padding * 2)
+			local ax = left_aligned and title_bx - rect_width or title_ax
 			local rect = {
-				ax = title_ax,
+				ax = ax,
 				ay = title_ay,
-				bx = round(title_ax + text_width(text, opts) + padding * 2),
-				by = self.by - bg_margin,
+				bx = ax + rect_width,
+				by = by - margin,
 			}
-			local opacity = get_point_to_rectangle_proximity(cursor, rect) == 0
+			local opacity = get_point_to_rectangle_proximity(cursor, rect) <= 0
 				and 1 or config.opacity.playlist_position
 			if opacity > 0 then
 				ass:rect(rect.ax, rect.ay, rect.bx, rect.by, {
@@ -228,16 +299,15 @@ function TopBar:render()
 				})
 			end
 			ass:txt(rect.ax + (rect.bx - rect.ax) / 2, rect.ay + (rect.by - rect.ay) / 2, 5, formatted_text, opts)
-			title_ax = rect.bx + bg_margin
+			if left_aligned then title_bx = rect.ax - margin else title_ax = rect.bx + margin end
 
 			-- Click action
 			cursor:zone('primary_click', rect, function() mp.command('script-binding uosc/playlist') end)
 		end
 
 		-- Skip rendering titles if there's not enough horizontal space
-		if max_bx - title_ax > self.font_size * 3 and options.top_bar_title ~= 'no' then
+		if title_bx - title_ax > self.font_size * 3 and options.top_bar_title ~= 'no' then
 			-- Main title
-			local main_title = self.show_alt_title and self.alt_title or self.main_title
 			if main_title then
 				local opts = {
 					size = self.font_size,
@@ -246,11 +316,13 @@ function TopBar:render()
 					opacity = visibility,
 					border = options.text_border * state.scale,
 					border_color = bg,
-					clip = string.format('\\clip(%d, %d, %d, %d)', self.ax, self.ay, max_bx, self.by),
+					clip = string.format('\\clip(%d, %d, %d, %d)', self.ax, ay, title_bx, by),
 				}
-				local bx = round(math.min(max_bx, title_ax + text_width(main_title, opts) + padding * 2))
-				local by = self.by - bg_margin
-				local title_rect = {ax = title_ax, ay = title_ay, bx = bx, by = by}
+				local rect_ideal_width = round(text_width(main_title, opts) + padding * 2)
+				local rect_width = math.min(rect_ideal_width, title_bx - title_ax)
+				local ax = left_aligned and title_bx - rect_width or title_ax
+				local by = by - margin
+				local title_rect = {ax = ax, ay = title_ay, bx = ax + rect_width, by = by}
 
 				if options.top_bar_alt_title_place == 'toggle' then
 					cursor:zone('primary_click', title_rect, function() self:toggle_title() end)
@@ -259,44 +331,49 @@ function TopBar:render()
 				ass:rect(title_rect.ax, title_rect.ay, title_rect.bx, title_rect.by, {
 					color = bg, opacity = visibility * config.opacity.title, radius = state.radius,
 				})
-				ass:txt(title_ax + padding, self.ay + (self.size / 2), 4, main_title, opts)
-				title_ay = by + spacing
+				local align = left_aligned and rect_ideal_width == rect_width and 6 or 4
+				local x = align == 6 and title_rect.bx - padding or ax + padding
+				ass:txt(x, ay + (self.size / 2), align, main_title, opts)
+				title_ay = by + self.title_spacing
 			end
 
 			-- Alt title
-			if self.alt_title and options.top_bar_alt_title_place == 'below' then
-				local font_size = self.font_size * 0.9
-				local height = font_size * 1.3
-				local by = title_ay + height
+			if alt_title and options.top_bar_alt_title_place == 'below' then
+				local by = title_ay + self.alt_title_size
 				local opts = {
-					size = font_size,
+					size = round(self.alt_title_size * 0.77),
 					wrap = 2,
 					color = bgt,
 					border = options.text_border * state.scale,
 					border_color = bg,
 					opacity = visibility,
 				}
-				local bx = round(math.min(max_bx, title_ax + text_width(self.alt_title, opts) + padding * 2))
+				local rect_ideal_width = round(text_width(alt_title, opts) + padding * 2)
+				local rect_width = math.min(rect_ideal_width, title_bx - title_ax)
+				local ax = left_aligned and title_bx - rect_width or title_ax
+				local bx = ax + rect_width
 				opts.clip = string.format('\\clip(%d, %d, %d, %d)', title_ax, title_ay, bx, by)
-				ass:rect(title_ax, title_ay, bx, by, {
+				ass:rect(ax, title_ay, bx, by, {
 					color = bg, opacity = visibility * config.opacity.title, radius = state.radius,
 				})
-				ass:txt(title_ax + padding, title_ay + height / 2, 4, self.alt_title, opts)
-				title_ay = by + spacing
+				local align = left_aligned and rect_ideal_width == rect_width and 6 or 4
+				local x = align == 6 and bx - padding or ax + padding
+				ass:txt(x, title_ay + self.alt_title_size / 2, align, alt_title, opts)
+				title_ay = by + self.title_spacing
 			end
 
 			-- Current chapter
-			if state.current_chapter then
+			if self.current_chapter then
 				local padding_half = round(padding / 2)
-				local font_size = self.font_size * 0.8
-				local height = font_size * 1.3
-				local text = '└ ' .. state.current_chapter.index .. ': ' .. state.current_chapter.title
-				local next_chapter = state.chapters[state.current_chapter.index + 1]
+				local prefix, postfix = left_aligned and '' or '└ ', left_aligned and ' ┘' or ''
+				local text = prefix .. self.current_chapter.index .. ': ' .. self.current_chapter.title .. postfix
+				local next_chapter = state.chapters[self.current_chapter.index + 1]
 				local chapter_end = next_chapter and next_chapter.time or state.duration or 0
-				local remaining_time = (state.time and state.time or 0) - chapter_end
+				local remaining_time = ((state.time or 0) - chapter_end) /
+					(options.destination_time == 'time-remaining' and 1 or state.speed)
 				local remaining_human = format_time(remaining_time, math.abs(remaining_time))
 				local opts = {
-					size = font_size,
+					size = round(self.chapter_size * 0.77),
 					italic = true,
 					wrap = 2,
 					color = bgt,
@@ -308,39 +385,44 @@ function TopBar:render()
 				local remaining_box_width = remaining_width + padding_half * 2
 
 				-- Title
+				local max_bx = title_bx - remaining_box_width - self.title_spacing
+				local rect_ideal_width = round(text_width(text, opts) + padding * 2)
+				local rect_width = math.min(rect_ideal_width, max_bx - title_ax)
+				local ax = left_aligned and title_bx - rect_width or title_ax
 				local rect = {
-					ax = title_ax,
+					ax = ax,
 					ay = title_ay,
-					bx = round(math.min(
-						max_bx - remaining_box_width - spacing,
-						title_ax + text_width(text, opts) + padding * 2
-					)),
-					by = title_ay + height,
+					bx = ax + rect_width,
+					by = title_ay + self.chapter_size,
 				}
 				opts.clip = string.format('\\clip(%d, %d, %d, %d)', title_ax, title_ay, rect.bx, rect.by)
 				ass:rect(rect.ax, rect.ay, rect.bx, rect.by, {
 					color = bg, opacity = visibility * config.opacity.title, radius = state.radius,
 				})
-				ass:txt(rect.ax + padding, rect.ay + height / 2, 4, text, opts)
-
-				-- Click action
-				cursor:zone('primary_click', rect, function() mp.command('script-binding uosc/chapters') end)
+				local align = left_aligned and rect_ideal_width == rect_width and 6 or 4
+				local x = align == 6 and rect.bx - padding or rect.ax + padding
+				ass:txt(x, rect.ay + self.chapter_size / 2, align, text, opts)
 
 				-- Time
-				rect.ax = rect.bx + spacing
-				rect.bx = rect.ax + remaining_box_width
+				local time_ax = left_aligned
+					and rect.ax - self.title_spacing - remaining_box_width or rect.bx + self.title_spacing
+				local time_bx = time_ax + remaining_box_width
 				opts.clip = nil
-				ass:rect(rect.ax, rect.ay, rect.bx, rect.by, {
+				ass:rect(time_ax, rect.ay, time_bx, rect.by, {
 					color = bg, opacity = visibility * config.opacity.title, radius = state.radius,
 				})
-				ass:txt(rect.ax + padding_half, rect.ay + height / 2, 4, remaining_human, opts)
+				ass:txt(time_ax + padding_half, rect.ay + self.chapter_size / 2, 4, remaining_human, opts)
 
-				title_ay = rect.by + spacing
+				-- Click action
+				rect.bx = time_bx
+				cursor:zone('primary_click', rect, function() mp.command('script-binding uosc/chapters') end)
+
+				title_ay = rect.by + self.title_spacing
 			end
 		end
 		self.title_by = title_ay - 1
 	else
-		self.title_by = self.ay
+		self.title_by = ay
 	end
 
 	return ass

@@ -85,30 +85,56 @@ end
 -- Tooltip.
 ---@param element Rect
 ---@param value string|number
----@param opts? {size?: number; offset?: number; bold?: boolean; italic?: boolean; width_overwrite?: number, margin?: number; responsive?: boolean; lines?: integer, timestamp?: boolean}
+---@param opts? {size?: number; align?: number; offset?: number; bold?: boolean; italic?: boolean; width_overwrite?: number, margin?: number; responsive?: boolean; lines?: integer, timestamp?: boolean; invert_colors?: boolean}
 function ass_mt:tooltip(element, value, opts)
 	if value == '' then return end
 	opts = opts or {}
 	opts.size = opts.size or round(16 * state.scale)
 	opts.border = options.text_border * state.scale
-	opts.border_color = bg
+	opts.border_color = opts.invert_colors and fg or bg
 	opts.margin = opts.margin or round(10 * state.scale)
 	opts.lines = opts.lines or 1
+	opts.color = opts.invert_colors and bg or fg
+	local offset = opts.offset or 2
 	local padding_y = round(opts.size / 6)
 	local padding_x = round(opts.size / 3)
-	local offset = opts.offset or 2
-	local align_top = opts.responsive == false or element.ay - offset > opts.size * 2
-	local x = element.ax + (element.bx - element.ax) / 2
-	local y = align_top and element.ay - offset or element.by + offset
-	local width_half = (opts.width_overwrite or text_width(value, opts)) / 2 + padding_x
-	local min_edge_distance = width_half + opts.margin + Elements:v('window_border', 'size', 0)
-	x = clamp(min_edge_distance, x, display.width - min_edge_distance)
-	local ax, bx = round(x - width_half), round(x + width_half)
-	local ay = (align_top and y - opts.size * opts.lines - 2 * padding_y or y)
-	local by = (align_top and y or y + opts.size * opts.lines + 2 * padding_y)
-	self:rect(ax, ay, bx, by, {color = bg, opacity = config.opacity.tooltip, radius = state.radius})
+	local width = (opts.width_overwrite or text_width(value, opts)) + padding_x * 2
+	local height = opts.size * opts.lines + 2 * padding_y
+	local width_half, height_half = width / 2, height / 2
+	local margin = opts.margin + Elements:v('window_border', 'size', 0)
+	local align = opts.align or 8
+
+	local x, y = 0, 0 -- center of tooltip
+
+	-- Flip alignment to other side when not enough space
+	if opts.responsive ~= false then
+		if align == 8 then
+			if element.ay - offset - height < margin then align = 2 end
+		elseif align == 2 then
+			if element.by + offset + height > display.height - margin then align = 8 end
+		elseif align == 6 then
+			if element.bx + offset + width > display.width - margin then align = 4 end
+		elseif align == 4 then
+			if element.ax - offset - width < margin then align = 6 end
+		end
+	end
+
+	-- Calculate tooltip center based on alignment
+	if align == 8 or align == 2 then
+		x = clamp(margin + width_half, element.ax + (element.bx - element.ax) / 2, display.width - margin - width_half)
+		y = align == 8 and element.ay - offset - height_half or element.by + offset + height_half
+	else
+		x = align == 6 and element.bx + offset + width_half or element.ax - offset - width_half
+		y = clamp(margin + height_half, element.ay + (element.by - element.ay) / 2, display.height - margin - height_half)
+	end
+
+	-- Draw
+	local ax, ay, bx, by = round(x - width_half), round(y - height_half), round(x + width_half), round(y + height_half)
+	self:rect(ax, ay, bx, by, {
+		color = opts.invert_colors and fg or bg, opacity = config.opacity.tooltip, radius = state.radius
+	})
 	local func = opts.timestamp and self.timestamp or self.txt
-	func(self, x, align_top and y - padding_y or y + padding_y, align_top and 2 or 8, tostring(value), opts)
+	func(self, x, y, 5, tostring(value), opts)
 	return {ax = element.ax, ay = ay, bx = element.bx, by = by}
 end
 
@@ -239,4 +265,48 @@ function ass_mt:spinner(x, y, size, opts)
 	opts.color = opts.color or fg
 	self:icon(x, y, size, 'autorenew', opts)
 	request_render()
+end
+
+-- Renders a smooth curve from Bezier segments.
+---@param ax number
+---@param ay number
+---@param bx number
+---@param by number
+---@param points number[] Flat table of normalized points (0–1): start point followed by segment entries cp1x, cp1y, cp2x, cp2y, px, py, ...
+---@param opts? {color?: string; border?: number; border_color?: string; opacity?: number|{primary?: number; border?: number, shadow?: number, main?: number}; clip?: string}
+function ass_mt:smooth_curve(ax, ay, bx, by, points, opts)
+	if not points or #points < 8 then return end
+	opts = opts or {}
+	local border_size = opts.border or 0
+	local tags = '\\pos(0,0)\\rDefault\\an7\\blur0'
+	-- border
+	tags = tags .. '\\bord' .. border_size
+	-- colors
+	tags = tags .. '\\1c&H' .. (opts.color or fg)
+	if border_size > 0 then tags = tags .. '\\3c&H' .. (opts.border_color or bg) end
+	-- opacity
+	if opts.opacity then tags = tags .. self.opacity(nil, opts.opacity) end
+	-- clip
+	if opts.clip then tags = tags .. opts.clip end
+	-- draw
+	self:new_event()
+	self.text = self.text .. '{' .. tags .. '}'
+	self:draw_start()
+
+	-- Scale normalized (0–1) coordinates to rectangle bounds
+	local width, height = bx - ax, by - ay
+	local function scale(x, y)
+		return ax + x * width, ay + y * height
+	end
+
+	local x0, y0 = scale(points[1], points[2])
+	self:move_to(x0, y0)
+	local max = math.floor((#points - 2) / 6) * 6 + 2
+	for i = 3, max, 6 do
+		local x1, y1 = scale(points[i],   points[i+1])
+		local x2, y2 = scale(points[i+2], points[i+3])
+		local x3, y3 = scale(points[i+4], points[i+5])
+		self:bezier_curve(x1, y1, x2, y2, x3, y3)
+	end
+	self:draw_stop()
 end

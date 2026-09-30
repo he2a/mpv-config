@@ -4,9 +4,7 @@
 ---@alias Rect {ax: number, ay: number, bx: number, by: number, window_drag?: boolean}
 ---@alias Circle {point: Point, r: number, window_drag?: boolean}
 ---@alias Hitbox Rect|Circle
-
---- In place sorting of filenames
----@param filenames string[]
+---@alias ComplexBindingInfo {event: 'down' | 'repeat' | 'up' | 'press'; is_mouse: boolean; canceled: boolean; key_name?: string; key_text?: string;}
 
 -- String sorting
 do
@@ -56,15 +54,14 @@ do
 
 	-- alphanum sorting for humans in Lua
 	-- http://notebook.kulchenko.com/algorithms/alphanumeric-natural-sorting-for-humans-in-lua
-	local function padnum(n, d)
-		return #d > 0 and ('%03d%s%.12f'):format(#n, n, tonumber(d) / (10 ^ #d))
-			or ('%03d%s'):format(#n, n)
+	local function padnum(n)
+		return ("%03d%s"):format(#n, n)
 	end
 
 	local function sort_lua(strings)
 		local tuples = {}
 		for i, f in ipairs(strings) do
-			tuples[i] = {f:lower():gsub('0*(%d+)%.?(%d*)', padnum), f}
+			tuples[i] = {f:lower():gsub('0*(%d+)', padnum), f}
 		end
 		table.sort(tuples, function(a, b)
 			return a[1] == b[1] and #b[2] < #a[2] or a[1] < b[1]
@@ -132,12 +129,14 @@ function tween(from, to, setter, duration_or_callback, callback)
 	return finish
 end
 
+-- Returns signed distance (negative values mean how deep inside the rect the point is).
 ---@param point Point
 ---@param rect Rect
 function get_point_to_rectangle_proximity(point, rect)
-	local dx = math.max(rect.ax - point.x, 0, point.x - rect.bx)
-	local dy = math.max(rect.ay - point.y, 0, point.y - rect.by)
-	return math.sqrt(dx * dx + dy * dy)
+	local dx = math.max(rect.ax - point.x, point.x - rect.bx)
+	local dy = math.max(rect.ay - point.y, point.y - rect.by)
+	local distance = math.sqrt(math.max(0, dx)^2 + math.max(0, dy)^2)
+	return distance + math.min(0, math.max(dx, dy))
 end
 
 ---@param point_a Point
@@ -151,7 +150,7 @@ end
 ---@param hitbox Hitbox
 function point_collides_with(point, hitbox)
 	return (hitbox.r and get_point_to_point_proximity(point, hitbox.point) <= hitbox.r) or
-		(not hitbox.r and get_point_to_rectangle_proximity(point, hitbox --[[@as Rect]]) == 0)
+		(not hitbox.r and get_point_to_rectangle_proximity(point, hitbox --[[@as Rect]]) <= 0)
 end
 
 ---@param lax number
@@ -223,9 +222,35 @@ function get_ray_to_rectangle_distance(ax, ay, bx, by, rect)
 	return closest
 end
 
--- Call function with args if it exists
-function call_maybe(fn, ...)
-	if type(fn) == 'function' then fn(...) end
+-- Converts a flat table of points to a smooth curve using Catmull-Rom to Bezier conversion.
+---@param points number[] Flat table: x1, y1, x2, y2, ...
+---@return number[] Flat table: start point followed by segment entries cp1x, cp1y, cp2x, cp2y, px, py, ...
+function points_to_bezier(points)
+	if not points or #points < 4 then return {} end
+	local function catmullrom_to_bezier(p0x, p0y, p1x, p1y, p2x, p2y, p3x, p3y)
+		local cp1x = p1x + (p2x - p0x) / 6
+		local cp1y = p1y + (p2y - p0y) / 6
+		local cp2x = p2x - (p3x - p1x) / 6
+		local cp2y = p2y - (p3y - p1y) / 6
+		return cp1x, cp1y, cp2x, cp2y
+	end
+	-- Helper to get x, y from flat table
+	local function get_xy(i)
+		return points[i * 2 - 1], points[i * 2]
+	end
+	local curve = {points[1], points[2]}
+	local xy_pairs = #points / 2
+	for i = 1, xy_pairs - 1 do
+		local p0x, p0y = get_xy(math.max(i - 1, 1))
+		local p1x, p1y = get_xy(i)
+		local p2x, p2y = get_xy(i+1)
+		local p3x, p3y = get_xy(math.min(i + 2, xy_pairs))
+		local cp1x, cp1y, cp2x, cp2y = catmullrom_to_bezier(p0x, p0y, p1x, p1y, p2x, p2y, p3x, p3y)
+		local n = #curve
+		curve[n+1], curve[n+2], curve[n+3], curve[n+4], curve[n+5], curve[n+6] =
+			cp1x, cp1y, cp2x, cp2y, p2x, p2y
+	end
+	return curve
 end
 
 -- Extracts the properties used by property expansion of that string.
@@ -398,9 +423,20 @@ function has_any_extension(path, extensions)
 	return false
 end
 
----@return string
-function get_default_directory()
-	return mp.command_native({'expand-path', options.default_directory})
+-- Executes mp command defined as a string or an itable, or does nothing if command is any other value.
+-- Returns boolean specifying if command was executed or not.
+---@param command string | string[] | nil | any
+---@return boolean executed `true` if command was executed.
+function execute_command(command)
+	local command_type = type(command)
+	if command_type == 'string' then
+		mp.command(command)
+		return true
+	elseif command_type == 'table' and #command > 0 then
+		mp.command_native(command)
+		return true
+	end
+	return false
 end
 
 -- Serializes path into its semantic parts.
@@ -424,24 +460,28 @@ function serialize_path(path)
 	}
 end
 
+local system_files = create_set({
+	'$RECYCLE.BIN', '$Recycle.Bin', '$SysReset', '$WinREAgent', '.sys', 'pagefile.sys', 'hiberfil.sys', 'config.sys',
+	'swapfile.sys', 'Thumbs.db', 'desktop.ini',
+})
+
 -- Reads items in directory and splits it into directories and files tables.
 ---@param path string
 ---@param opts? {types?: string[], hidden?: boolean}
----@return string[]|nil files
----@return string[]|nil directories
+---@return string[] files
+---@return string[] directories
+---@return string|nil error
 function read_directory(path, opts)
 	opts = opts or {}
 	local items, error = utils.readdir(path, 'all')
-
-	if not items then
-		msg.error('Reading files from "' .. path .. '" failed: ' .. error)
-		return nil, nil
-	end
-
 	local files, directories = {}, {}
 
+	if not items then
+		return files, directories, 'Reading directory "' .. path .. '" failed. Error: ' .. utils.to_string(error)
+	end
+
 	for _, item in ipairs(items) do
-		if item ~= '.' and item ~= '..' and (opts.hidden or item:sub(1, 1) ~= '.') then
+		if item ~= '.' and item ~= '..' and not system_files[item] and (opts.hidden or item:sub(1, 1) ~= '.') then
 			local info = utils.file_info(join_path(path, item))
 			if info then
 				if info.is_file then
@@ -467,8 +507,11 @@ function get_adjacent_files(file_path, opts)
 	opts = opts or {}
 	local current_meta = serialize_path(file_path)
 	if not current_meta then return end
-	local files = read_directory(current_meta.dirname, {hidden = opts.hidden})
-	if not files then return end
+	local files, _dirs, error = read_directory(current_meta.dirname, {hidden = opts.hidden})
+	if error then
+		msg.error(error)
+		return
+	end
 	sort_strings(files)
 	local current_file_index
 	local paths = {}
@@ -546,7 +589,7 @@ end
 function navigate_directory(delta)
 	if not state.path or is_protocol(state.path) then return false end
 	local paths, current_index = get_adjacent_files(state.path, {
-		types = config.types.autoload,
+		types = config.types.load,
 		hidden = options.show_hidden_files,
 	})
 	if paths and current_index then
@@ -631,7 +674,7 @@ function delete_file_navigate(delta)
 		if Menu:is_open('open-file') then
 			Elements:maybe('menu', 'delete_value', path)
 		end
-		delete_file(path)
+		if path then delete_file(path) end
 	end
 end
 
@@ -782,18 +825,33 @@ end
 ---@return {[string]: table}|table
 function find_active_keybindings(key)
 	local bindings = mp.get_property_native('input-bindings', {})
-	local active = {} -- map: key-name -> bind-info
+	local active_map = {} -- map: key-name -> bind-info
+	local active_table = {}
 	for _, bind in pairs(bindings) do
 		if bind.owner ~= 'uosc' and bind.priority >= 0 and (not key or bind.key == key) and (
-				not active[bind.key]
-				or (active[bind.key].is_weak and not bind.is_weak)
-				or (bind.is_weak == active[bind.key].is_weak and bind.priority > active[bind.key].priority)
+				not active_map[bind.key]
+				or (active_map[bind.key].is_weak and not bind.is_weak)
+				or (bind.is_weak == active_map[bind.key].is_weak and bind.priority > active_map[bind.key].priority)
 			)
 		then
-			active[bind.key] = bind
+			active_table[#active_table + 1] = bind
+			active_map[bind.key] = bind
 		end
 	end
-	return not key and active or active[key]
+	return key and active_map[key] or active_table
+end
+
+do
+	local key_subs = {{'^#$', ''}, {anycase('sharp'), '#'}}
+
+	-- Replaces stuff like `SHARP` -> `#`, `#` -> ``
+	---@param keybind string
+	function keybind_to_human(keybind)
+		for _, sub in ipairs(key_subs) do
+			keybind = string.gsub(keybind, sub[1], sub[2])
+		end
+		return keybind
+	end
 end
 
 ---@param type 'sub'|'audio'|'video'
@@ -806,29 +864,144 @@ function load_track(type, path)
 	end
 end
 
----@return string|nil
-function get_clipboard()
+---@param args (string|number)[]
+---@return string|nil error
+---@return table data
+function call_ziggy(args)
 	local result = mp.command_native({
 		name = 'subprocess',
 		capture_stderr = true,
 		capture_stdout = true,
 		playback_only = false,
-		args = {config.ziggy_path, 'get-clipboard'},
+		args = itable_join({config.ziggy_path}, args),
 	})
 
-	local function print_error(message)
-		msg.error('Getting clipboard data failed. Error: ' .. message)
+	if result.status ~= 0 then
+		return 'Calling ziggy failed. Exit code ' .. result.status .. ': ' .. result.stdout .. result.stderr, {}
 	end
 
-	if result.status == 0 then
-		local data = utils.parse_json(result.stdout)
-		if data and data.payload then
-			return data.payload
-		else
-			print_error(data and (data.error and data.message or 'unknown error') or 'couldn\'t parse json')
-		end
+	local data = utils.parse_json(result.stdout)
+	if not data then
+		return 'Ziggy response error. Couldn\'t parse json: ' .. result.stdout, {}
+	elseif data.error then
+		return 'Ziggy error: ' .. data.message, {}
 	else
-		print_error('exit code ' .. result.status .. ': ' .. result.stdout .. result.stderr)
+		return nil, data
+	end
+end
+
+---@param args (string|number)[]
+---@param callback fun(error: string|nil, data: table)
+---@return fun() abort Function to abort the request.
+function call_ziggy_async(args, callback)
+	local abort_signal = mp.command_native_async({
+		name = 'subprocess',
+		capture_stderr = true,
+		capture_stdout = true,
+		playback_only = false,
+		args = itable_join({config.ziggy_path}, args),
+	}, function(success, result, error)
+		if not success or not result or result.status ~= 0 then
+			local exit_code = (result and result.status or 'unknown')
+			local message = error or (result and result.stdout .. result.stderr) or ''
+			callback('Calling ziggy failed. Exit code: ' .. exit_code .. ' Error: ' .. message, {})
+			return
+		end
+
+		local json = result and type(result.stdout) == 'string' and result.stdout or ''
+		local data = utils.parse_json(json)
+		if not data then
+			callback('Ziggy response error. Couldn\'t parse json: ' .. json, {})
+		elseif data.error then
+			callback('Ziggy error: ' .. data.message, {})
+		else
+			return callback(nil, data)
+		end
+	end)
+
+	return function()
+		mp.abort_async_command(abort_signal)
+	end
+end
+
+---@return string|nil
+function get_clipboard()
+	local data, err = mp.get_property('clipboard/text')
+	if data then
+		return data
+	end
+	if err and err ~= 'property not found' and err ~= 'property unavailable' then
+		mp.commandv('show-text', 'Get clipboard error: ' .. err)
+		return nil
+	end
+
+	local err, data = call_ziggy({'get-clipboard'})
+	if err then
+		mp.commandv('show-text', 'Get clipboard error. See console for details.')
+		msg.error(err)
+	end
+	return data and data.payload
+end
+
+---@param payload any
+---@return string|nil payload String that was copied to clipboard.
+function set_clipboard(payload)
+	payload = tostring(payload)
+
+	local success, err = mp.set_property('clipboard/text', payload)
+	if success then
+		mp.commandv('show-text', t('Copied to clipboard') .. ': ' .. payload, 3000)
+		return payload
+	end
+	if err and err ~= 'property not found' and err ~= 'property unavailable' then
+		mp.commandv('show-text', 'Set clipboard error: ' .. err)
+		return nil
+	end
+
+	local err, data = call_ziggy({'set-clipboard', payload})
+	if err then
+		mp.commandv('show-text', 'Set clipboard error. See console for details.')
+		msg.error(err)
+	else
+		mp.commandv('show-text', t('Copied to clipboard') .. ': ' .. payload, 3000)
+	end
+	return data and data.payload
+end
+
+-- Returns Youtube heatmap data if available.
+---@return number[]|nil Flat table of normalized points (0–1)
+function load_youtube_heatmap()
+	if not state.path or not is_protocol(state.path) then return end
+	-- Match mpv's ytdl whitelist
+	if not (state.path:match('^https?://%w+%.youtube%.com/') or
+			state.path:match('^https?://youtube%.com/') or
+			state.path:match('^https?://youtu%.be/')) then return end
+
+	local r = mp.get_property_native('user-data/mpv/ytdl/json-subprocess-result')
+	local ytdl_result = r and utils.parse_json(r.stdout)
+	if ytdl_result and ytdl_result.heatmap then
+		local data = ytdl_result.heatmap
+		local max_val = 0
+		local vid_length = data[#data].end_time
+		for _, seg in ipairs(data) do
+			max_val = math.max(max_val, seg.value)
+		end
+		-- Normalize and clamp to avoid gaps in heatmap
+		local is_above = options.timeline_heatmap == 'above'
+		local min_height, graph_height = 4, is_above and 40 or options.timeline_size
+		local max_norm_y = 1 - (min_height / graph_height)
+		local norm = {0, 1}
+		for _, seg in ipairs(data) do
+			local center_time = (seg.start_time + seg.end_time) / 2
+			local norm_x = center_time / vid_length
+			local norm_y = math.min(max_norm_y, 1 - (seg.value / max_val))
+			norm[#norm + 1], norm[#norm + 2] = norm_x, norm_y
+		end
+		-- Add final anchor
+		local last_y = math.min(max_norm_y, 1 - (data[#data].value / max_val))
+		norm[#norm + 1], norm[#norm + 2] = 1, last_y
+		norm[#norm + 1], norm[#norm + 2] = 1, 1
+		return points_to_bezier(norm)
 	end
 end
 
@@ -839,9 +1012,6 @@ function render()
 	state.render_last_time = mp.get_time()
 
 	cursor:clear_zones()
-
-	-- Click on empty area detection
-	if setup_click_detection then setup_click_detection() end
 
 	-- Actual rendering
 	local ass = assdraw.ass_new()
