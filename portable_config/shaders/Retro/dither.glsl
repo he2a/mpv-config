@@ -1,97 +1,84 @@
-//!HOOK MAIN
+//!HOOK OUTPUT
 //!BIND HOOKED
-//!BIND LUMA
 //!DESC 8x8 Ordered Dithering
 
-float ditherX(vec2 position, float brightness) {
+// =========================================================================
+// USER CONFIGURATION
+// =========================================================================
+
+#define DITHER_MODE 1
+
+// --- MODE 0 SETTINGS: LUMA STYLIZATION -----------------------------------
+
+#define LUMA_COMPRESSION_MULT 0.8
+#define LUMA_COMPRESSION_OFFSET 0.1
+#define LUMA_DARK_MULT 0.4
+#define LUMA_LIGHT_MULT 1.1
+
+// --- MODE 1 SETTINGS: RGB QUANTIZATION -----------------------------------
+
+#define RGB_COLOR_BITS 3.0
+#define RGB_DITHER_SPREAD 1.0
+
+// Pre-quantization adjustments to combat the flattening effect of low bit-depths.
+// 1.0 is neutral. >1.0 increases punch and vibrancy.
+#define RGB_CONTRAST 1.2
+#define RGB_SATURATION 1.0
+
+// =========================================================================
+
+const float dither_matrix[64] = float[64](
+    0.015625, 0.515625, 0.140625, 0.640625, 0.046875, 0.546875, 0.171875, 0.671875,
+    0.765625, 0.265625, 0.890625, 0.390625, 0.796875, 0.296875, 0.921875, 0.421875,
+    0.203125, 0.703125, 0.078125, 0.578125, 0.234375, 0.734375, 0.109375, 0.609375,
+    0.953125, 0.453125, 0.828125, 0.328125, 0.984375, 0.484375, 0.859375, 0.359375,
+    0.0625,   0.5625,   0.1875,   0.6875,   0.03125,  0.53125,  0.15625,  0.65625,
+    0.8125,   0.3125,   0.9375,   0.4375,   0.78125,  0.28125,  0.90625,  0.40625,
+    0.25,     0.75,     0.125,    0.625,    0.21875,  0.71875,  0.09375,  0.59375,
+    1.0,      0.5,      0.875,    0.375,    0.96875,  0.46875,  0.84375,  0.34375
+);
+
+float getDither(vec2 position) {
     int x = int(mod(position.x, 8.0));
     int y = int(mod(position.y, 8.0));
-    int index = x + y * 8;
-    float limit = 0.0;
-    
-	if (x < 8) {
-		if (index == 0) limit = 0.015625;
-		if (index == 1) limit = 0.515625;
-		if (index == 2) limit = 0.140625;
-		if (index == 3) limit = 0.640625;
-		if (index == 4) limit = 0.046875;
-		if (index == 5) limit = 0.546875;
-		if (index == 6) limit = 0.171875;
-		if (index == 7) limit = 0.671875;
-		if (index == 8) limit = 0.765625;
-		if (index == 9) limit = 0.265625;
-		if (index == 10) limit = 0.890625;
-		if (index == 11) limit = 0.390625;
-		if (index == 12) limit = 0.796875;
-		if (index == 13) limit = 0.296875;
-		if (index == 14) limit = 0.921875;
-		if (index == 15) limit = 0.421875;
-		if (index == 16) limit = 0.203125;
-		if (index == 17) limit = 0.703125;
-		if (index == 18) limit = 0.078125;
-		if (index == 19) limit = 0.578125;
-		if (index == 20) limit = 0.234375;
-		if (index == 21) limit = 0.734375;
-		if (index == 22) limit = 0.109375;
-		if (index == 23) limit = 0.609375;
-		if (index == 24) limit = 0.953125;
-		if (index == 25) limit = 0.453125;
-		if (index == 26) limit = 0.828125;
-		if (index == 27) limit = 0.328125;
-		if (index == 28) limit = 0.984375;
-		if (index == 29) limit = 0.484375;
-		if (index == 30) limit = 0.859375;
-		if (index == 31) limit = 0.359375;
-		if (index == 32) limit = 0.0625;
-		if (index == 33) limit = 0.5625;
-		if (index == 34) limit = 0.1875;
-		if (index == 35) limit = 0.6875;
-		if (index == 36) limit = 0.03125;
-		if (index == 37) limit = 0.53125;
-		if (index == 38) limit = 0.15625;
-		if (index == 39) limit = 0.65625;
-		if (index == 40) limit = 0.8125;
-		if (index == 41) limit = 0.3125;
-		if (index == 42) limit = 0.9375;
-		if (index == 43) limit = 0.4375;
-		if (index == 44) limit = 0.78125;
-		if (index == 45) limit = 0.28125;
-		if (index == 46) limit = 0.90625;
-		if (index == 47) limit = 0.40625;
-		if (index == 48) limit = 0.25;
-		if (index == 49) limit = 0.75;
-		if (index == 50) limit = 0.125;
-		if (index == 51) limit = 0.625;
-		if (index == 52) limit = 0.21875;
-		if (index == 53) limit = 0.71875;
-		if (index == 54) limit = 0.09375;
-		if (index == 55) limit = 0.59375;
-		if (index == 56) limit = 1.0;
-		if (index == 57) limit = 0.5;
-		if (index == 58) limit = 0.875;
-		if (index == 59) limit = 0.375;
-		if (index == 60) limit = 0.96875;
-		if (index == 61) limit = 0.46875;
-		if (index == 62) limit = 0.84375;
-		if (index == 63) limit = 0.34375;
-    }
-    return brightness < limit ? 0.0 : 1.0;
+    return dither_matrix[x + y * 8];
 }
 
 vec4 hook() {
     vec4 color = HOOKED_tex(HOOKED_pos);
+    float dither_val = getDither(gl_FragCoord.xy);
     
-    // Get corresponding luma value from LUMA plane
-    float brightness = LUMA_tex(LUMA_pos).r;
+#if DITHER_MODE == 0
     
-    // Get screen position for dithering pattern
-    vec2 screen_pos = gl_FragCoord.xy;
+    float brightness = dot(color.rgb, vec3(0.2126, 0.7152, 0.0722));
+    float adjusted_brightness = brightness * LUMA_COMPRESSION_MULT + LUMA_COMPRESSION_OFFSET;
+    float dither_mask = step(dither_val, adjusted_brightness);
     
-    // Calculate dithering mask based on luma plane brightness
-    float dither_mask = ditherX(screen_pos, brightness);
+    color.rgb *= mix(LUMA_DARK_MULT, LUMA_LIGHT_MULT, dither_mask);
+
+#elif DITHER_MODE == 1
     
-    // Apply dithering to RGB channels in PREKERNEL stage
-    color.rgb *= dither_mask;
+    // 1. Apply pre-quantization Contrast
+    color.rgb = (color.rgb - 0.5) * RGB_CONTRAST + 0.5;
     
+    // 2. Apply pre-quantization Saturation
+    float luma = dot(color.rgb, vec3(0.2126, 0.7152, 0.0722));
+    color.rgb = mix(vec3(luma), color.rgb, RGB_SATURATION);
+    
+    // Clamp before quantization to prevent inverted colors from pushed contrast
+    color.rgb = clamp(color.rgb, 0.0, 1.0);
+    
+    // 3. Center the dither value (-0.5 to +0.5) to preserve absolute black/white floors
+    float centered_dither = dither_val - 0.5;
+    
+    float steps = exp2(RGB_COLOR_BITS) - 1.0;
+    
+    // Apply centered dither with standard +0.5 rounding to snap to exact bands
+    color.rgb = floor(color.rgb * steps + 0.5 + (centered_dither * RGB_DITHER_SPREAD)) / steps;
+    
+    color.rgb = clamp(color.rgb, 0.0, 1.0);
+
+#endif
+
     return color;
 }
