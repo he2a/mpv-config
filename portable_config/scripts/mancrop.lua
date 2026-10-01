@@ -1,3 +1,6 @@
+-- Manual cropping script https://github.com/occivink/mpv-scripts
+-- Modified to use mpv's crop function so this can work with hwdec
+
 local opts = {
     mode = "hard", -- can be "hard" or "soft". If hard, apply a crop filter, if soft zoom + pan. Or a bonus "delogo" mode
     video_area_only = false,
@@ -127,22 +130,12 @@ function draw_shade(ass, unshaded, window)
     ass:append("{\\4a&HFF}")
     local c1, c2 = unshaded.top_left, unshaded.bottom_right
     local v = window
-    --          c1.x   c2.x
-    --     +-----+------------+
-    --     |     |     ur     |
-    -- c1.y| ul  +-------+----+
-    --     |     |       |    |
-    -- c2.y+-----+-------+ lr |
-    --     |     ll      |    |
-    --     +-------------+----+
     ass:draw_start()
     ass:rect_cw(v.top_left.x, v.top_left.y, c1.x, c2.y) -- ul
     ass:rect_cw(c1.x, v.top_left.y, v.bottom_right.x, c1.y) -- ur
     ass:rect_cw(v.top_left.x, c2.y, c2.x, v.bottom_right.y) -- ll
     ass:rect_cw(c2.x, c1.y, v.bottom_right.x, v.bottom_right.y) -- lr
     ass:draw_stop()
-    -- also possible to draw a rect over the whole video
-    -- and \iclip it in the middle, but seemingy slower
 end
 
 function draw_frame(ass, frame)
@@ -228,7 +221,6 @@ function draw_crop_zone()
                 cursor,
                 rect_centered,
                 rect_keepaspect and dim.w/dim.h)
-            -- don't draw shade over non-visible video parts
             if opts.draw_shade then
                 local window = {
                     top_left = { x = 0, y = 0 },
@@ -285,25 +277,28 @@ function crop_video(x1, y1, x2, y2)
         x2 = clamp(0, x2, 1)
         y2 = clamp(0, y2, 1)
         local vop = mp.get_property_native("video-out-params")
-        local vf_table = mp.get_property_native("vf")
         local x = math.floor(x1 * vop.w + 0.5)
         local y = math.floor(y1 * vop.h + 0.5)
         local w = math.floor((x2 - x1) * vop.w + 0.5)
         local h = math.floor((y2 - y1) * vop.h + 0.5)
         if active_mode == "delogo" then
-            -- delogo is a little special and needs some padding to function
             w = math.min(vop.w - 1, w)
             h = math.min(vop.h - 1, h)
             x = math.max(1, x)
             y = math.max(1, y)
             if x + w == vop.w then w = w - 1 end
             if y + h == vop.h then h = h - 1 end
+            
+            local vf_table = mp.get_property_native("vf")
+            vf_table[#vf_table + 1] = {
+                name="delogo",
+                params= { x = tostring(x), y = tostring(y), w = tostring(w), h = tostring(h) }
+            }
+            mp.set_property_native("vf", vf_table)
+        else
+            -- Apply crop natively via mpv video-crop
+            mp.command(string.format("no-osd set file-local-options/video-crop %dx%d+%d+%d", w, h, x, y))
         end
-        vf_table[#vf_table + 1] = {
-            name=(active_mode == "hard") and "crop" or "delogo",
-            params= { x = tostring(x), y = tostring(y), w = tostring(w), h = tostring(h) }
-        }
-        mp.set_property_native("vf", vf_table)
     end
 end
 
@@ -359,10 +354,11 @@ function start_crop(mode)
         return
     end
     local mode_maybe = mode or opts.mode
-    if mode_maybe ~= 'soft' then
-        local hwdec = mp.get_property("hwdec-current")
-        if hwdec and hwdec ~= "no" and not string.find(hwdec, "-copy$") then
-            msg.error("Cannot crop with hardware decoding active (see manual)")
+    if mode_maybe == 'delogo' then
+        local hwdec = mp.get_property("hwdec-current", "no")
+        if hwdec:find("-copy$") == nil and hwdec ~= "no" and 
+           hwdec ~= "crystalhd" and hwdec ~= "rkmpp" then
+            msg.error("Cannot use delogo with hardware decoding active (unless -copy is used)")
             return
         end
     end
@@ -391,22 +387,31 @@ function toggle_crop(mode)
     if toggle_mode == "soft" then return end -- can't toggle soft mode
 
     local remove_filter = function()
-        local to_remove = (toggle_mode == "hard") and "crop" or "delogo"
-        local vf_table = mp.get_property_native("vf")
-        if #vf_table > 0 then
-            for i = #vf_table, 1, -1 do
-                if vf_table[i].name == to_remove then
-                    for j = i, #vf_table-1 do
-                        vf_table[j] = vf_table[j+1]
+        if toggle_mode == "hard" then
+            if mp.get_property("video-crop") ~= "" then
+                mp.command("no-osd set file-local-options/video-crop ''")
+                return true
+            end
+            return false
+        else
+            local to_remove = "delogo"
+            local vf_table = mp.get_property_native("vf")
+            if #vf_table > 0 then
+                for i = #vf_table, 1, -1 do
+                    if vf_table[i].name == to_remove then
+                        for j = i, #vf_table-1 do
+                            vf_table[j] = vf_table[j+1]
+                        end
+                        vf_table[#vf_table] = nil
+                        mp.set_property_native("vf", vf_table)
+                        return true
                     end
-                    vf_table[#vf_table] = nil
-                    mp.set_property_native("vf", vf_table)
-                    return true
                 end
             end
+            return false
         end
-        return false
     end
+    
     if not remove_filter() then
         start_crop(mode)
     end
