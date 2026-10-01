@@ -94,6 +94,12 @@ function on_shader_change(name, value)
     end
 end
 
+function clear_shaders()
+	if mp.get_property('glsl-shaders') ~= '' then
+		mp.command('change-list glsl-shaders clr all')
+	end
+end
+
 function shader_debug()
     if saved_shaders == nil then
         local current_shaders = mp.get_property('glsl-shaders', '')
@@ -111,6 +117,7 @@ function shader_debug()
 end
 
 mp.add_key_binding(nil, 'shader-view', toggle_sview)
+mp.add_key_binding(nil, 'shader-clear', clear_shaders)
 mp.add_key_binding(nil, 'shader-debug', shader_debug)
 
 mp.register_event("start-file", function()
